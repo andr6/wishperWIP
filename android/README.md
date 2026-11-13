@@ -48,6 +48,12 @@ Settings, so you can mix (e.g. local STT + cloud LLM) or go fully offline.
 
 ## Build
 
+For the fork's P0.0 baseline, Android CI validation and on-device smoke tests,
+see [BASELINE.md](BASELINE.md). Both Android CI and release builds fetch the pinned
+sherpa-onnx AAR through `scripts/fetch-sherpa-aar.sh`, which validates its
+published SHA-256 before Gradle runs.
+
+
 Requires JDK 17 (Android Studio bundles it) and the Android SDK. The on-device
 Whisper module (`:lib`) compiles native code, so you also need the **NDK** and
 **CMake** (install via Android Studio → SDK Manager → SDK Tools). The native build
