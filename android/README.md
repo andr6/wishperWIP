@@ -124,5 +124,6 @@ For starting or stopping the bubble, use **Settings → Floating bubble**. Exter
   mark selections read-only; there you get clipboard copy.
 - The six prompts are the built-in defaults (not yet editable in the UI —
   edit `Defaults.DEFAULT_PROMPTS` to change them).
-- API keys are currently stored in app-private Preferences DataStore, **not encrypted at rest**. Do not assume device backup or file access provides credential protection. A separate Android Keystore-backed migration is planned.
+- **API-key protection:** Cloud LLM and STT credentials are encrypted at rest with AES-256-GCM using a non-exportable Android Keystore key. On the first settings read after upgrading from a compatible prior build, legacy plaintext keys are copied to the encrypted vault and verified before the old DataStore entries are removed. Failed migration or unavailable Keystore keys cause an error rather than silently discarding the credential. API-key fields are masked in Settings.
+- These Keystore keys cannot be exported or restored on a different device; after reinstalling, re-enter any cloud provider credentials. If you install the fork under a different Android application ID, the old application's data does not migrate automatically.
 - Automatic Android cloud backup and device-to-device transfer are explicitly excluded for this fork, to avoid exporting API keys, dictation history, audio recordings, and personal vocabulary. **Uninstalling the application can therefore permanently delete local data.**
