@@ -114,18 +114,9 @@ Gestures:
 With accessibility on, the result types into your focused field; otherwise it's
 copied to paste.
 
-The bubble survives until you toggle it off or reboot. (No boot-autostart yet;
-Android restricts starting overlays from boot — add a `BOOT_COMPLETED` receiver
-if you want it back automatically.)
+The bubble can be restored after reboot or an app update when the floating-bubble preference was enabled. Android/OEM background-start restrictions may prevent this on some devices.
 
-**"I don't see the bubble":** overlays do **not** render over the lock screen or
-Always-On Display — unlock the phone first. To start/stop it without the UI
-(testing, automation, a future Quick Settings tile):
-
-```bash
-adb shell am broadcast -a com.voicerewriter.START_BUBBLE -n com.voicerewriter/.BubbleControlReceiver
-adb shell am broadcast -a com.voicerewriter.STOP_BUBBLE  -n com.voicerewriter/.BubbleControlReceiver
-```
+For starting or stopping the bubble, use **Settings → Floating bubble**. External ADB broadcasts to `BubbleControlReceiver` are no longer supported: the receiver is private to the application to prevent another app from starting or stopping the overlay.
 
 ## Notes / limits
 
@@ -133,5 +124,5 @@ adb shell am broadcast -a com.voicerewriter.STOP_BUBBLE  -n com.voicerewriter/.B
   mark selections read-only; there you get clipboard copy.
 - The six prompts are the built-in defaults (not yet editable in the UI —
   edit `Defaults.DEFAULT_PROMPTS` to change them).
-- The API key lives in app-private DataStore. For a personal sideloaded build
-  that's fine; swap to EncryptedSharedPreferences if you want at-rest encryption.
+- API keys are currently stored in app-private Preferences DataStore, **not encrypted at rest**. Do not assume device backup or file access provides credential protection. A separate Android Keystore-backed migration is planned.
+- Automatic Android cloud backup and device-to-device transfer are explicitly excluded for this fork, to avoid exporting API keys, dictation history, audio recordings, and personal vocabulary. **Uninstalling the application can therefore permanently delete local data.**
