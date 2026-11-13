@@ -67,6 +67,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -414,7 +416,7 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
                         Padded {
                             Label("API key")
                             Spacer(Modifier.height(8.dp))
-                            KeyField(sttKey, Defaults.STT_PROVIDERS[sttProvider]?.let { keyPlaceholder(sttProvider) } ?: "key") { sttKey = it; persist() }
+                            KeyField(sttKey, Defaults.STT_PROVIDERS[sttProvider]?.let { keyPlaceholder(sttProvider) } ?: "key", secret = true) { sttKey = it; persist() }
                             if (sttProvider == "custom") {
                                 Spacer(Modifier.height(10.dp))
                                 KeyField(sttEndpoint, "Transcription endpoint URL") { sttEndpoint = it; persist() }
@@ -512,7 +514,7 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
                                             if (provider != "local") {
                                                 if (provider == "custom") KeyField(customEndpoint, "Endpoint URL") { customEndpoint = it; persist() }
                                                 KeyField(model, "Model id") { model = it; persist() }
-                                                KeyField(apiKey, "API key") { apiKey = it; persist() }
+                                                KeyField(apiKey, "API key", secret = true) { apiKey = it; persist() }
                                             }
                                         }
                                     }
@@ -1001,11 +1003,12 @@ private fun InfoNote(text: String, onSwitch: () -> Unit) {
 }
 
 @Composable
-private fun KeyField(value: String, placeholder: String, onChange: (String) -> Unit) {
+private fun KeyField(value: String, placeholder: String, secret: Boolean = false, onChange: (String) -> Unit) {
     val cs = MaterialTheme.colorScheme
     Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(11.dp)).background(cs.surface).border(1.5.dp, cs.outline, RoundedCornerShape(11.dp)).padding(13.dp)) {
         BasicTextField(
             value = value, onValueChange = onChange, singleLine = true,
+            visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = cs.onSurface),
             cursorBrush = SolidColor(cs.primary),
             decorationBox = { inner ->

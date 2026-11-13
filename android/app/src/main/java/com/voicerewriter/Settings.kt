@@ -100,6 +100,8 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 
 class SettingsRepository(private val context: Context) {
 
+    private val vault = SecureCredentials(context)
+
     private object Keys {
         val PROVIDER = stringPreferencesKey("provider")
         val MODEL = stringPreferencesKey("model")
@@ -124,18 +126,32 @@ class SettingsRepository(private val context: Context) {
     }
 
     val settings: Flow<Settings> = context.dataStore.data.map { p ->
+        // Migration is write-ahead: encrypted credentials are durably committed before
+        // deleting either plaintext DataStore entry. A crash between those steps is
+        // harmless; the next read verifies the vault and removes the stale plaintext.
+        val oldLlm = p[Keys.API_KEY]
+        val oldStt = p[Keys.STT_KEY]
+        vault.migrateMissing(oldLlm, oldStt)
+        val apiKey = vault.llmKey()
+        val sttKey = vault.sttKey()
+        if (oldLlm != null || oldStt != null) {
+            context.dataStore.edit { current ->
+                current.remove(Keys.API_KEY)
+                current.remove(Keys.STT_KEY)
+            }
+        }
         val defaults = Settings()
         Settings(
             provider = p[Keys.PROVIDER] ?: defaults.provider,
             model = p[Keys.MODEL] ?: defaults.model,
             customEndpoint = p[Keys.CUSTOM_ENDPOINT] ?: defaults.customEndpoint,
-            apiKey = p[Keys.API_KEY] ?: defaults.apiKey,
+            apiKey = apiKey,
             voice = p[Keys.VOICE] ?: defaults.voice,
             antiAI = p[Keys.ANTI_AI] ?: defaults.antiAI,
             temperature = p[Keys.TEMPERATURE] ?: defaults.temperature,
             sttProvider = p[Keys.STT_PROVIDER] ?: defaults.sttProvider,
             sttEndpoint = p[Keys.STT_ENDPOINT] ?: defaults.sttEndpoint,
-            sttKey = p[Keys.STT_KEY] ?: defaults.sttKey,
+            sttKey = sttKey,
             sttModel = p[Keys.STT_MODEL] ?: defaults.sttModel,
             sttLanguage = DictationLanguage.normalize(p[Keys.STT_LANGUAGE] ?: defaults.sttLanguage),
             defaultMode = p[Keys.DEFAULT_MODE] ?: defaults.defaultMode,
@@ -152,17 +168,19 @@ class SettingsRepository(private val context: Context) {
     suspend fun get(): Settings = settings.first()
 
     suspend fun save(s: Settings) {
+        // Encrypted vault commit must succeed before we change any other settings.
+        vault.save(s.apiKey, s.sttKey)
         context.dataStore.edit { p ->
             p[Keys.PROVIDER] = s.provider
             p[Keys.MODEL] = s.model
             p[Keys.CUSTOM_ENDPOINT] = s.customEndpoint
-            p[Keys.API_KEY] = s.apiKey
+            p.remove(Keys.API_KEY) // remove leftover plaintext from older versions
             p[Keys.VOICE] = s.voice
             p[Keys.ANTI_AI] = s.antiAI
             p[Keys.TEMPERATURE] = s.temperature
             p[Keys.STT_PROVIDER] = s.sttProvider
             p[Keys.STT_ENDPOINT] = s.sttEndpoint
-            p[Keys.STT_KEY] = s.sttKey
+            p.remove(Keys.STT_KEY) // remove leftover plaintext from older versions
             p[Keys.STT_MODEL] = s.sttModel
             p[Keys.STT_LANGUAGE] = DictationLanguage.normalize(s.sttLanguage)
             p[Keys.DEFAULT_MODE] = s.defaultMode
