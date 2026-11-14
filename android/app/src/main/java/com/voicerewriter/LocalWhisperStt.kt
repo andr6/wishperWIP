@@ -5,8 +5,6 @@ import android.util.Log
 import com.whispercpp.whisper.WhisperContext
 import com.whispercpp.whisper.WhisperCpuConfig
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -18,9 +16,11 @@ import kotlinx.coroutines.withContext
  */
 object LocalWhisperStt {
 
-    private val loadLock = Mutex()
-    @Volatile private var ctx: WhisperContext? = null
-    @Volatile private var loadedId: String? = null
+    // A native pointer is owned exclusively during load, decode and release.
+    private val models = ExclusiveModelCache<WhisperContext>()
+
+    private fun load(context: Context, id: String): WhisperContext =
+        WhisperContext.createContextFromFile(WhisperModelManager.modelFile(context, id).absolutePath)
 
     /**
      * Transcribe [samples] (16 kHz mono, normalized -1..1). Suspends on heavy CPU work.
@@ -33,17 +33,13 @@ object LocalWhisperStt {
         }
         val seconds = samples.size / AudioRecorder.SAMPLE_RATE.toFloat()
         val t0 = System.nanoTime()
-        val whisper = loadLock.withLock {
-            if (ctx == null || loadedId != id) {
-                ctx?.let { runCatching { it.release() } }
-                ctx = withContext(Dispatchers.IO) {
-                    WhisperContext.createContextFromFile(WhisperModelManager.modelFile(context, id).absolutePath)
-                }
-                loadedId = id
-            }
-            ctx!!
-        }
-        val tLoaded = System.nanoTime()
+        // Keep ownership across the *entire* native decode, not just loading.
+        // Concurrent warm-up or an engine switch cannot release its context.
+        val (raw, tLoaded, tDone) = models.withModel(
+            id, load = { withContext(Dispatchers.IO) { load(context, id) } },
+            release = { it.release() },
+        ) { whisper ->
+            val loadedAt = System.nanoTime()
         // transcribeData runs on whisper's own single-thread dispatcher internally.
         val model = WhisperModelManager.model(id)
         // A transliterating fine-tune decodes in its own fixed language, not the user's: the
@@ -72,7 +68,7 @@ object LocalWhisperStt {
         // English dictation keeps greedy + single-segment until someone measures it the same
         // way; the same fix may well help there too, and that deserves its own numbers.
         val beamSize = if (model.isTransliterating) 5 else 1
-        val raw = whisper.transcribeData(
+            val raw = whisper.transcribeData(
             samples,
             printTimestamp = false,
             prompt = prompt,
@@ -80,7 +76,9 @@ object LocalWhisperStt {
             beamSize = beamSize,
             singleSegment = !model.isTransliterating,
         )
-        val tDone = System.nanoTime()
+
+            Triple(raw, loadedAt, System.nanoTime())
+        }
         Log.i(
             "LocalWhisperStt",
             "model=$id audio=${"%.1f".format(seconds)}s " +
@@ -99,16 +97,10 @@ object LocalWhisperStt {
     suspend fun warm(context: Context, modelId: String) {
         val id = modelId.ifBlank { WhisperModelManager.DEFAULT_MODEL }
         if (!WhisperModelManager.isReady(context, id)) return
-        loadLock.withLock {
-            if (ctx != null && loadedId == id) return  // already warm
-            val t0 = System.nanoTime()
-            ctx?.let { runCatching { it.release() } }
-            ctx = withContext(Dispatchers.IO) {
-                WhisperContext.createContextFromFile(WhisperModelManager.modelFile(context, id).absolutePath)
-            }
-            loadedId = id
-            Log.i("LocalWhisperStt", "warm model=$id load=${(System.nanoTime() - t0) / 1_000_000}ms")
-        }
+        val t0 = System.nanoTime()
+        models.warm(id, load = { withContext(Dispatchers.IO) { load(context, id) } },
+            release = { it.release() })
+        Log.i("LocalWhisperStt", "warm model=$id elapsed=${(System.nanoTime() - t0) / 1_000_000}ms")
     }
 
     /** Strip whisper's bracketed non-speech markers (e.g. [BLANK_AUDIO], [Music]). */
