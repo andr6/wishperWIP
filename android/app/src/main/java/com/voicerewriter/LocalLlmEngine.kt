@@ -66,9 +66,11 @@ object LocalLlmEngine {
             }
             engine.loadModel(file.absolutePath)
             engine.setSystemPrompt(system) // must be right after load
-        }
 
-        Log.i("LocalLlmEngine", "model=${settings.model} inputChars=${user.length}")
+            // Hold the native engine exclusively for the *entire* stream.
+            // Previously we unlocked immediately after load, allowing another
+            // rewrite to cleanUp/reload the model while tokens were in flight.
+            Log.i("LocalLlmEngine", "model=${settings.model} inputChars=${user.length}")
         // Suppress emission once the model starts repeating, but DON'T cancel the
         // upstream — cancelling surfaces as a CancellationException and the caller
         // would never see normal completion. Let generation finish (it's capped).
@@ -86,7 +88,8 @@ object LocalLlmEngine {
                     }
                 }
         )
-        Log.i("LocalLlmEngine", "outputChars=${acc.length}")
+            Log.i("LocalLlmEngine", "outputChars=${acc.length}")
+        }
     }
 
     /** Wait until the engine is idle (initialized or a model is ready). */
