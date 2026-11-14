@@ -277,10 +277,9 @@ private fun OnboardingScreen(onLaunchDictation: () -> Unit, onGoHome: () -> Unit
                 cur.copy(
                     sttProvider = "local",
                     sttModel = fit.sttModel,
-                    // Only steer the polish model when polish is still on-device. If someone
-                    // re-runs onboarding after pointing the app at a cloud provider, that's
-                    // their choice to keep, not ours to overwrite with a GGUF id.
-                    model = if (cur.provider == "local") fit.llmModel else cur.model,
+                    // On-device is mandatory for both transcription and cleanup.
+                    provider = "local",
+                    model = fit.llmModel,
                 ),
             )
         }
