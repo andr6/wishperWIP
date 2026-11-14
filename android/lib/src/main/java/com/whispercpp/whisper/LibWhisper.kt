@@ -12,9 +12,8 @@ private const val LOG_TAG = "LibWhisper"
 
 class WhisperContext private constructor(private var ptr: Long) {
     // Meet Whisper C++ constraint: Don't access from more than one thread at a time.
-    private val scope: CoroutineScope = CoroutineScope(
-        Executors.newSingleThreadExecutor().asCoroutineDispatcher()
-    )
+    private val dispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+    private val scope: CoroutineScope = CoroutineScope(dispatcher)
 
     /**
      * [beamSize] > 1 selects beam search over greedy decoding; [singleSegment] forces the whole
@@ -56,11 +55,17 @@ class WhisperContext private constructor(private var ptr: Long) {
         return@withContext WhisperLib.benchGgmlMulMat(nthreads)
     }
 
-    suspend fun release() = withContext(scope.coroutineContext) {
-        if (ptr != 0L) {
-            WhisperLib.freeContext(ptr)
-            ptr = 0
+    suspend fun release() {
+        // The JNI context is confined to its dedicated thread. Close that
+        // executor after disposal, otherwise each model switch leaks a thread.
+        if (ptr == 0L) return
+        withContext(scope.coroutineContext) {
+            if (ptr != 0L) {
+                WhisperLib.freeContext(ptr)
+                ptr = 0
+            }
         }
+        dispatcher.close()
     }
 
     protected fun finalize() {
