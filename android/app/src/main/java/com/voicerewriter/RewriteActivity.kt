@@ -521,11 +521,10 @@ class RewriteActivity : ComponentActivity() {
             val category = AppContext.categoryFor(host, spoken)
             dictationCategory = category
             val isCode = category == AppContext.Category.CODE
-            // The deterministic stage is English-shaped, not language-neutral: Capitalizer applies
-            // sentence case (Devanagari has no case at all), FillerWordRemover hunts "um"/"uh",
-            // NumberNormalizer and SpokenFormNormalizer encode English spoken conventions. Run on
-            // Hindi it degrades correct output rather than improving it, so non-English dictation
-            // takes the raw transcript. Per-language rules would be their own project.
+            // The existing deterministic stage is English-specific. PT-PT and Spanish
+            // get only conservative punctuation/capitalization formatting; other languages
+            // and automatic/mixed-language detection are left unchanged until reliable
+            // language metadata is available. Never normalize their numbers or spoken forms.
             // The second clause catches what a language check alone cannot. Romanized Hinglish
             // is Latin text produced while the decoder was told "en", so `isEnglish` says yes
             // and the English-shaped stage would run on "kal office mein meeting thi" —
@@ -534,8 +533,14 @@ class RewriteActivity : ComponentActivity() {
             val englishOnlyCleanup = s.deterministicCleanup &&
                 DictationLanguage.isEnglish(s.sttLanguage) &&
                 !isTransliteratingModel(s)
-            val cleaned0 = if (englishOnlyCleanup)
-                TextProcessor.process(spoken, TextProcessingConfig(), isCodeContext = isCode) else spoken
+            val cleaned0 = when {
+                !s.deterministicCleanup || isTransliteratingModel(s) -> spoken
+                englishOnlyCleanup ->
+                    TextProcessor.process(spoken, TextProcessingConfig(), isCodeContext = isCode)
+                else -> MultilingualTextFormatter.format(
+                    spoken, s.sttLanguage, isCodeContext = isCode
+                )
+            }
             // Chat/messaging: drop the trailing full stop Whisper adds to short one-liners — a
             // period on a single casual message reads as terse/formal, which people don't want.
             val cleaned = if (englishOnlyCleanup) dropChatTerminalPeriod(cleaned0, category) else cleaned0
@@ -556,7 +561,8 @@ class RewriteActivity : ComponentActivity() {
             // reformat from a rewrite in a language it also does not know. Until there is a
             // Hinglish-capable cleanup model, the transcript is better off untouched.
             if (!s.llmPolishEnabled || wordCount < 4 || (isCode && s.polishLevel != PolishLevel.FULL) ||
-                deterministicStructure || isTransliteratingModel(s)) {
+                deterministicStructure || isTransliteratingModel(s) ||
+                !MultilingualTextFormatter.canUseEnglishPolish(s.sttLanguage)) {
                 toReview(cleaned); return
             }
             stage = Stage.CORRECTING
