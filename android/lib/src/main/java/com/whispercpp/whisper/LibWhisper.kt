@@ -59,13 +59,18 @@ class WhisperContext private constructor(private var ptr: Long) {
         // The JNI context is confined to its dedicated thread. Close that
         // executor after disposal, otherwise each model switch leaks a thread.
         if (ptr == 0L) return
-        withContext(scope.coroutineContext) {
-            if (ptr != 0L) {
-                WhisperLib.freeContext(ptr)
-                ptr = 0
+        try {
+            // Disposal must finish even if an in-flight coroutine was cancelled:
+            // otherwise a cancelled model switch can strand native memory.
+            withContext(NonCancellable + dispatcher) {
+                if (ptr != 0L) {
+                    WhisperLib.freeContext(ptr)
+                    ptr = 0
+                }
             }
+        } finally {
+            dispatcher.close()
         }
-        dispatcher.close()
     }
 
     protected fun finalize() {
