@@ -131,7 +131,12 @@ object PendingAudio {
             sttModel = sttModel,
             result = null,
         )
-        metaFile(c, id).writeText(rec.toJson().toString())
+        // Never expose a WAV as an indexed recording before the metadata
+        // commit is complete. Roll back the orphan WAV on a failed first write.
+        if (!AtomicRecordingMetadata.writeText(metaFile(c, id), rec.toJson().toString())) {
+            wav.delete()
+            return null
+        }
         inFlight.add(id)
         rec
     }.getOrNull()
@@ -151,11 +156,15 @@ object PendingAudio {
      * put on the clipboard) *and* logged to history — never speculatively.
      */
     fun settle(c: Context, id: String, result: String) {
+        // A delivery has already happened, but committing metadata can fail
+        // (e.g. disk full). Never prune or delete the WAV in that case.
+        // Releasing the in-flight claim makes it visible for recovery.
         inFlight.remove(id)
-        runCatching {
-            val rec = get(c, id) ?: return
-            metaFile(c, id).writeText(rec.copy(result = result).toJson().toString())
-        }
+        val rec = get(c, id) ?: return
+        if (!AtomicRecordingMetadata.writeText(
+                metaFile(c, id), rec.copy(result = result).toJson().toString()
+            )
+        ) return
         // Honour the user's intent: history off means nothing lingers on disk.
         if (!DictationHistory.keepHistory(c)) delete(c, id) else prune(c)
     }
