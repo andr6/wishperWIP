@@ -18,21 +18,27 @@ object DictationLanguage {
     data class Lang(val code: String, val label: String)
 
     const val DEFAULT = "en"
+    const val AUTO = "auto"
 
-    /** True for the default. Post-processing is English-shaped — see [Settings.deterministicCleanup]. */
+    /** Auto is an explicit opt-in, not the default for existing installations. */
+    fun isAutomatic(code: String?): Boolean = normalize(code) == AUTO
+
+    /** Only an explicit English preference enables English-only cleanup; auto is unknown. */
     fun isEnglish(code: String): Boolean = normalize(code) == DEFAULT
 
     /** Coerce a stored value to a language whisper.cpp actually knows, falling back to English. */
     fun normalize(code: String?): String {
         val c = code?.trim()?.lowercase().orEmpty()
-        return if (ALL.any { it.code == c }) c else DEFAULT
+        return if (c == AUTO || ALL.any { it.code == c }) c else DEFAULT
     }
 
     fun label(code: String): String =
-        ALL.firstOrNull { it.code == normalize(code) }?.label ?: "English"
+        if (isAutomatic(code)) "Automatic (detect speech)"
+        else ALL.firstOrNull { it.code == normalize(code) }?.label ?: "English"
 
     val ALL: List<Lang> = listOf(
         Lang("en", "English"),
+        Lang(AUTO, "Automatic (detect speech)"),
         Lang("af", "Afrikaans"),
         Lang("sq", "Albanian"),
         Lang("am", "Amharic"),
