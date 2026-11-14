@@ -30,7 +30,7 @@ class InsertionTextPlannerTest {
     }
 
     @Test fun keepsMultilingualAccentsAndLineBreaksVerbatim() {
-        assertEquals(InsertionTextPlanner.Plan("Sim, amanhã.\n¡Sí, señor!", 24),
+        assertEquals(InsertionTextPlanner.Plan("Sim, amanhã.\n¡Sí, señor!", 11),
             plan("Sim, .\n¡Sí, señor!", "amanhã", 5, 5))
     }
 
