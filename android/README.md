@@ -6,45 +6,37 @@ typed straight into the field you're in.** Or select text in any app → tap
 **Rewrite** in the selection toolbar → pick an action → the rewrite replaces the
 selection in place.
 
-It ships a tuned set of prompts, a voice profile, anti-AI guardrails, and
-OpenAI-compatible gateway logic (Vercel AI Gateway / OpenRouter / Anthropic /
-custom). Both stages can run **fully on-device**: speech-to-text via whisper.cpp and the
-rewrite/cleanup via llama.cpp (a small local model) — or via the cloud
-(OpenAI-compatible Whisper + Anthropic/OpenRouter/custom). Each is selectable in
-Settings, so you can mix (e.g. local STT + cloud LLM) or go fully offline.
+This Android fork performs **100% of inference on-device**. Models can be
+downloaded online, then speech recognition, text cleanup, local rewriting,
+personalization and insertion work offline with no cloud APIs, API keys or
+subscription. See [LOCAL_ONLY.md](LOCAL_ONLY.md) for the enforced boundaries
+and device acceptance tests.
 
 ## How it works
 
-- **Voice flow** (the bubble → `RewriteActivity` voice sheet) — tap the bubble,
-  pick a mode, tap the mic and speak. Audio is recorded (`AudioRecorder`),
-  transcribed by `SttEngine` (cloud Whisper), then:
-  - **Dictate fresh** — the transcript is cleaned up by the LLM (filler,
-    punctuation, grammar) and inserted at the cursor.
-  - **Rewrite clipboard** — copy text first, then *speak a command* ("make this
-    formal"); the LLM rewrites the clipboard text and replaces the selection.
-  **Insert** writes the result into the focused field via the accessibility
-  service (`OpenWisprAccessibilityService`, clipboard `ACTION_PASTE`). If the
-  service is off or no field is focused, it falls back to copying.
+- **Voice flow** (bubble → `RewriteActivity` voice sheet): microphone capture
+  (`AudioRecorder`) and local Silero VAD feed `OnDeviceStt`. The user can
+  dictate fresh text or speak instructions to rewrite clipboard text. Rules
+  and optional local llama.cpp cleanup produce text for insertion into the
+  focused field through Android's accessibility APIs, with clipboard fallback.
 - **`PROCESS_TEXT` intent** (`RewriteActivity`) — Android shows "Rewrite" in the
   text-selection toolbar in every app. The activity returns the rewritten text
   via `EXTRA_PROCESS_TEXT`, replacing the selection in editable fields.
 - **Floating bubble** (`BubbleService`) — always-on draggable overlay button
   (foreground service + "Display over other apps"). Tapping it opens the voice
   sheet.
-- **`SettingsActivity`** — LLM provider / key / model / voice profile / anti-AI /
-  temperature, **STT provider / key / model**, default voice mode, dictation
-  cleanup toggle, accessibility enable, and the bubble switch — stored in DataStore.
-- **`RewriteEngine`** — builds the system prompt, streams from the gateway over
-  SSE (OkHttp), cleans output. Adds `streamDictationCleanup` and
-  `streamInstruction` paths for the voice modes.
-- **Speech-to-text — two backends behind one seam:**
-  - **Cloud** (`SttEngine`) — multipart upload to an OpenAI-compatible
-    `/v1/audio/transcriptions` (Groq / OpenAI / custom).
-  - **On-device** (`LocalWhisperStt` + `:lib`) — whisper.cpp running locally, fully
-    offline and private. `WhisperModelManager` downloads the multilingual `small`
-    model (~488MB) once into app storage. Audio is captured as raw 16 kHz mono PCM
-    (`AudioRecorder`) and fed directly to whisper as float samples (cloud gets a WAV).
-  The active backend is the **STT provider** chosen in Settings.
+- **`SettingsActivity`** manages local STT/LLM model selection and downloads,
+  language, voice profile, cleanup, accessibility and bubble preferences.
+- **`RewriteEngine`** provides prompts and output-validation logic used by
+  `LocalLlmEngine` (llama.cpp). Its obsolete remote inference entry points
+  reject execution.
+- **`OnDeviceStt`** selects local `LocalParakeetStt` (Sherpa-ONNX,
+  current English Parakeet v2) or `LocalWhisperStt` (multilingual whisper.cpp).
+  Audio capture is 16-kHz mono PCM. Model weights are downloaded into app
+  storage; they are never sent to external inference providers.
+- **`ModelDownloader`** is the only type of application component that needs
+  network access for provisioning STT/LLM weights.
+- **Personalization** includes an on-device vocabulary and correction history.
 
 ## Build
 
@@ -86,22 +78,16 @@ A debug-signed APK is fine for personal use indefinitely.
 ## First run
 
 1. Open **OpenWispr** from the launcher.
-2. **LLM:** pick a provider. For **On-device (Gemma/Qwen)**, choose a model
-   (Gemma-3-270M default) and tap **Download** (one time). For cloud providers,
-   paste your API key and model. Optionally write a voice profile.
-3. **Voice:** under **Voice**, pick a speech-to-text provider:
-   - **On-device (Whisper)** — fully offline, no key. Tap **Download** to fetch the
-     model once (~488MB); wait for "Ready".
-   - **Groq / OpenAI / custom** — cloud; paste the provider key (Groq keys start
-     with `gsk_`; get one at console.groq.com → API Keys).
-   Choose your default mode and the dictation-cleanup toggle. **Save**.
-4. **Auto-insert:** tap **Enable** next to "Auto-insert (accessibility)" and turn
-   on *OpenWispr* under Settings → Accessibility. Without it, results are
-   copied to the clipboard instead of typed in.
-5. Turn on the **Floating bubble** (grant "Display over other apps"). The first
-   mic tap also asks for the microphone permission.
-6. **Use it:** tap the bubble → tap the mic → speak → **Insert**. Or in any app,
-   select text → **Rewrite** in the selection toolbar → pick an action → **Accept**.
+2. Download an on-device speech model (Parakeet v2 for English, or multilingual
+   Whisper for PT-PT, Spanish and other languages). The installed weights run
+   offline thereafter.
+3. For AI polish, download an optional local Qwen/Gemma GGUF model. Without a
+   local LLM model, deterministic cleanup remains available.
+4. Enable auto-insert under Android Accessibility, and grant microphone and
+   overlay permissions as required. Without auto-insert, use clipboard fallback.
+5. Tap the floating bubble to dictate, or select text in another app and choose
+   **Rewrite** to process it using the on-device LLM.
+6. Disable Wi-Fi and mobile data to verify local inference after provisioning.
 
 ## Floating bubble
 
@@ -130,6 +116,11 @@ For starting or stopping the bubble, use **Settings → Floating bubble**. Exter
   mark selections read-only; there you get clipboard copy.
 - The six prompts are the built-in defaults (not yet editable in the UI —
   edit `Defaults.DEFAULT_PROMPTS` to change them).
-- **API-key protection:** Cloud LLM and STT credentials are encrypted at rest with AES-256-GCM using a non-exportable Android Keystore key. On the first settings read after upgrading from a compatible prior build, legacy plaintext keys are copied to the encrypted vault and verified before the old DataStore entries are removed. Failed migration or unavailable Keystore keys cause an error rather than silently discarding the credential. API-key fields are masked in Settings.
-- These Keystore keys cannot be exported or restored on a different device; after reinstalling, re-enter any cloud provider credentials. If you install the fork under a different Android application ID, the old application's data does not migrate automatically.
+- **No external inference:** Cloud STT/LLM provider options have been removed
+  from Settings. Previous cloud-provider selections are reset to local models
+  and obsolete API credentials are discarded (including old encrypted keys).
+  Model downloads still require internet connectivity.
+- Existing installations may need to download a different on-device model after
+  upgrading. Model file availability is checked before inference.
+- Debug logs record model metadata and lengths rather than text content.
 - Automatic Android cloud backup and device-to-device transfer are explicitly excluded for this fork, to avoid exporting API keys, dictation history, audio recordings, and personal vocabulary. **Uninstalling the application can therefore permanently delete local data.**

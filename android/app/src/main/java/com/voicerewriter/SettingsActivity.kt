@@ -88,8 +88,7 @@ import kotlinx.coroutines.launch
  * surface — setup status, Voice (engine segment + per-model download manager, Parakeet
  * recommended on top), Cleanup & Polish (smart cleanup + AI-polish level + advanced
  * polish model), Bubble, Privacy, Personalization, Reliability, General. Changes persist
- * immediately. All prior capabilities (cloud STT/LLM providers, voice profile, etc.) are
- * preserved under the relevant sections / Advanced.
+ * immediately. All inference is local; model weights may be downloaded online.
  */
 class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -119,16 +118,12 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
     // LLM (rewrite / polish model)
     var provider by remember { mutableStateOf(Defaults.DEFAULT_PROVIDER) }
     var model by remember { mutableStateOf(Defaults.DEFAULT_MODEL) }
-    var customEndpoint by remember { mutableStateOf("") }
-    var apiKey by remember { mutableStateOf("") }
     var voice by remember { mutableStateOf("") }
     var antiAI by remember { mutableStateOf(true) }
     var temperature by remember { mutableFloatStateOf(Defaults.DEFAULT_TEMPERATURE.toFloat()) }
 
     // STT
     var sttProvider by remember { mutableStateOf(Defaults.DEFAULT_STT_PROVIDER) }
-    var sttEndpoint by remember { mutableStateOf("") }
-    var sttKey by remember { mutableStateOf("") }
     var sttModel by remember { mutableStateOf("") }
     var sttLanguage by remember { mutableStateOf(DictationLanguage.DEFAULT) }
     var defaultMode by remember { mutableStateOf(Defaults.MODE_DICTATE) }
@@ -142,7 +137,6 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
     var audioKeepDays by remember { mutableStateOf(PendingAudio.keepDays(context)) }
 
     var advancedOpen by remember { mutableStateOf(false) }
-    var cloudLlmOpen by remember { mutableStateOf(false) }
 
     // download tracking (a single in-flight download at a time)
     var dlId by remember { mutableStateOf<String?>(null) }
@@ -169,9 +163,9 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
 
     LaunchedEffect(Unit) {
         val s = repo.get()
-        provider = s.provider; model = s.model; customEndpoint = s.customEndpoint; apiKey = s.apiKey
+        provider = "local"; model = s.model
         voice = s.voice; antiAI = s.antiAI; temperature = s.temperature.toFloat()
-        sttProvider = s.sttProvider; sttEndpoint = s.sttEndpoint; sttKey = s.sttKey; sttModel = s.sttModel
+        sttProvider = "local"; sttModel = s.sttModel
         sttLanguage = DictationLanguage.normalize(s.sttLanguage)
         defaultMode = s.defaultMode
         deterministicCleanup = s.deterministicCleanup; polishLevel = s.polishLevel
@@ -225,9 +219,9 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
     var pickingLanguage by remember { mutableStateOf(false) }
 
     fun snapshot() = Settings(
-        provider = provider, model = model.trim(), customEndpoint = customEndpoint.trim(),
-        apiKey = apiKey.trim(), voice = voice, antiAI = antiAI, temperature = temperature.toDouble(),
-        sttProvider = sttProvider, sttEndpoint = sttEndpoint.trim(), sttKey = sttKey.trim(),
+        provider = "local", model = model.trim(), customEndpoint = "",
+        apiKey = "", voice = voice, antiAI = antiAI, temperature = temperature.toDouble(),
+        sttProvider = "local", sttEndpoint = "", sttKey = "",
         sttModel = sttModel.trim(), sttLanguage = sttLanguage, defaultMode = defaultMode,
         deterministicCleanup = deterministicCleanup, polishLevel = polishLevel,
         vadAutoStop = vadAutoStop, bubbleOnlyOnFields = bubbleOnlyOnFields,
@@ -372,18 +366,9 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
                     Padded {
                         Label("Engine")
                         Spacer(Modifier.height(12.dp))
-                        Segment(
-                            options = listOf("local" to "On-device", "groq" to "Groq", "openai" to "OpenAI", "custom" to "Custom"),
-                            selected = sttProvider,
-                            onSelect = {
-                                sttProvider = it
-                                if (it != "custom" && it != "local") {
-                                    val d = Defaults.STT_PROVIDERS[it]?.defaultModel.orEmpty()
-                                    if (d.isNotEmpty()) sttModel = d
-                                }
-                                persist()
-                            },
-                        )
+                        Text("On-device only · models download online, inference stays offline.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if (sttProvider == "local") {
                         Divider()
@@ -410,25 +395,6 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
                                 )
                                 Spacer(Modifier.height(10.dp))
                             }
-                        }
-                    } else {
-                        Divider()
-                        Padded {
-                            Label("API key")
-                            Spacer(Modifier.height(8.dp))
-                            KeyField(sttKey, Defaults.STT_PROVIDERS[sttProvider]?.let { keyPlaceholder(sttProvider) } ?: "key", secret = true) { sttKey = it; persist() }
-                            if (sttProvider == "custom") {
-                                Spacer(Modifier.height(10.dp))
-                                KeyField(sttEndpoint, "Transcription endpoint URL") { sttEndpoint = it; persist() }
-                                Spacer(Modifier.height(10.dp))
-                                KeyField(sttModel, "Model id") { sttModel = it; persist() }
-                            }
-                            Spacer(Modifier.height(10.dp))
-                            InfoNote(buildString {
-                                append("Audio is sent to ")
-                                append(if (sttProvider == "groq") "Groq" else if (sttProvider == "openai") "OpenAI" else "your provider")
-                                append(" for transcription.")
-                            }) { sttProvider = "local"; persist() }
                         }
                     }
                     Divider()
@@ -503,21 +469,6 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
                                         Slider(value = temperature, onValueChange = { temperature = it }, onValueChangeFinished = { persist() }, valueRange = 0f..1f)
                                     }
                                     ToggleRowBare("Anti-AI phrasing", antiAI) { antiAI = it; persist() }
-                                    DisclosureHeader("Use a cloud model instead", cloudLlmOpen) { cloudLlmOpen = !cloudLlmOpen }
-                                    AnimatedVisibility(visible = cloudLlmOpen) {
-                                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                            Segment(
-                                                options = Defaults.PROVIDERS.values.filter { it.id != "local" }.map { it.id to it.label },
-                                                selected = if (provider == "local") "" else provider,
-                                                onSelect = { p -> provider = p; Defaults.PROVIDERS[p]?.defaultModel?.takeIf { it.isNotEmpty() }?.let { model = it }; persist() },
-                                            )
-                                            if (provider != "local") {
-                                                if (provider == "custom") KeyField(customEndpoint, "Endpoint URL") { customEndpoint = it; persist() }
-                                                KeyField(model, "Model id") { model = it; persist() }
-                                                KeyField(apiKey, "API key", secret = true) { apiKey = it; persist() }
-                                            }
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -785,10 +736,6 @@ private fun sttModelOptions(recommendedId: String): List<SttModelOption> = build
     WhisperModelManager.MODELS.forEach {
         add(SttModelOption(it.id, it.label, it.sizeLabel, it.id == recommendedId))
     }
-}
-
-private fun keyPlaceholder(provider: String) = when (provider) {
-    "groq" -> "gsk_..."; "openai" -> "sk-..."; else -> "key or endpoint"
 }
 
 /* ------------------------ reusable pieces ------------------------ */

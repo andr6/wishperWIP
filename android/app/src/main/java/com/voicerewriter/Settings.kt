@@ -126,32 +126,28 @@ class SettingsRepository(private val context: Context) {
     }
 
     val settings: Flow<Settings> = context.dataStore.data.map { p ->
-        // Migration is write-ahead: encrypted credentials are durably committed before
-        // deleting either plaintext DataStore entry. A crash between those steps is
-        // harmless; the next read verifies the vault and removes the stale plaintext.
-        val oldLlm = p[Keys.API_KEY]
-        val oldStt = p[Keys.STT_KEY]
-        vault.migrateMissing(oldLlm, oldStt)
-        val apiKey = vault.llmKey()
-        val sttKey = vault.sttKey()
-        if (oldLlm != null || oldStt != null) {
+        // Cloud inference is retired in this Android-only fork.
+        // Remove obsolete secrets (plaintext and Keystore-protected) rather than
+        // injecting them into a Settings object that could reach any caller.
+        vault.clear()
+        if (p[Keys.API_KEY] != null || p[Keys.STT_KEY] != null) {
             context.dataStore.edit { current ->
                 current.remove(Keys.API_KEY)
                 current.remove(Keys.STT_KEY)
             }
         }
         val defaults = Settings()
-        Settings(
+        LocalOnlyPolicy.enforce(Settings(
             provider = p[Keys.PROVIDER] ?: defaults.provider,
             model = p[Keys.MODEL] ?: defaults.model,
             customEndpoint = p[Keys.CUSTOM_ENDPOINT] ?: defaults.customEndpoint,
-            apiKey = apiKey,
+            apiKey = "",
             voice = p[Keys.VOICE] ?: defaults.voice,
             antiAI = p[Keys.ANTI_AI] ?: defaults.antiAI,
             temperature = p[Keys.TEMPERATURE] ?: defaults.temperature,
             sttProvider = p[Keys.STT_PROVIDER] ?: defaults.sttProvider,
             sttEndpoint = p[Keys.STT_ENDPOINT] ?: defaults.sttEndpoint,
-            sttKey = sttKey,
+            sttKey = "",
             sttModel = p[Keys.STT_MODEL] ?: defaults.sttModel,
             sttLanguage = DictationLanguage.normalize(p[Keys.STT_LANGUAGE] ?: defaults.sttLanguage),
             defaultMode = p[Keys.DEFAULT_MODE] ?: defaults.defaultMode,
@@ -162,14 +158,15 @@ class SettingsRepository(private val context: Context) {
             bubbleOnlyOnFields = p[Keys.BUBBLE_ONLY_ON_FIELDS] ?: defaults.bubbleOnlyOnFields,
             hasCompletedOnboarding = p[Keys.HAS_COMPLETED_ONBOARDING] ?: defaults.hasCompletedOnboarding,
             parakeetHotwordsExperimental = p[Keys.PARAKEET_HOTWORDS_EXPERIMENTAL] ?: defaults.parakeetHotwordsExperimental,
-        )
+        ))
     }
 
     suspend fun get(): Settings = settings.first()
 
-    suspend fun save(s: Settings) {
-        // Encrypted vault commit must succeed before we change any other settings.
-        vault.save(s.apiKey, s.sttKey)
+    suspend fun save(incoming: Settings) {
+        // No cloud credentials or cloud-provider selection may be persisted.
+        vault.clear()
+        val s = LocalOnlyPolicy.enforce(incoming)
         context.dataStore.edit { p ->
             p[Keys.PROVIDER] = s.provider
             p[Keys.MODEL] = s.model

@@ -87,8 +87,8 @@ import kotlinx.coroutines.withContext
  * first byte is fetched and picks a pair this device can actually run, so a budget phone gets a
  * smaller on-device model instead of a 1GB download it will OOM on at the try-it step.
  *
- * On-device is the only path here; cloud transcription stays available later in Settings, as
- * does personalization (dictionary, contacts, tone), which is deliberately not in this flow.
+ * On-device inference is the only path. Model downloads need internet, but
+ * transcription and cleanup operate offline. Personalization remains in Settings.
  * Special-access grants (overlay, accessibility) deliver no result callback, so live state
  * is re-read from [SetupUtils] on every ON_RESUME. Shown once on first launch (gated by
  * [Settings.hasCompletedOnboarding]); re-launchable from Settings.
@@ -121,7 +121,7 @@ class OnboardingActivity : ComponentActivity() {
 // Onboarding downloads exactly one speech model and one polish model — no engine choice is
 // put to the user. Which pair it is comes from [DeviceFit.plan]: the full pair on a phone with
 // the memory to run it, a smaller on-device pair otherwise. Anything else (a different Whisper
-// size, cloud) stays reachable from Settings for people who go looking.
+// size) stays reachable from Settings for people who go looking.
 
 // Read aloud at the try-it step, and chosen by running candidates through the real pipeline:
 // this one fires filler removal, spoken punctuation and list formatting, and turns a single
@@ -277,10 +277,9 @@ private fun OnboardingScreen(onLaunchDictation: () -> Unit, onGoHome: () -> Unit
                 cur.copy(
                     sttProvider = "local",
                     sttModel = fit.sttModel,
-                    // Only steer the polish model when polish is still on-device. If someone
-                    // re-runs onboarding after pointing the app at a cloud provider, that's
-                    // their choice to keep, not ours to overwrite with a GGUF id.
-                    model = if (cur.provider == "local") fit.llmModel else cur.model,
+                    // On-device is mandatory for both transcription and cleanup.
+                    provider = "local",
+                    model = fit.llmModel,
                 ),
             )
         }

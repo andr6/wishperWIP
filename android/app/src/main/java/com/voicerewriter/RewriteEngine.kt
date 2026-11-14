@@ -1,28 +1,13 @@
 package com.voicerewriter
 
-import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONArray
-import org.json.JSONObject
-import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.flow.flow
 
 /**
- * Port of background.js: builds the system prompt, calls an OpenAI-compatible
- * streaming endpoint, and yields content deltas as they arrive.
+ * Prompt construction, output cleanup and content-preservation guards shared by
+ * the on-device llama.cpp inference engine. Remote inference is disabled.
  */
 object RewriteEngine {
-
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(0, TimeUnit.SECONDS) // streaming: no read timeout
-        .build()
-
-    private val JSON = "application/json; charset=utf-8".toMediaType()
 
     // ---------------- prompt building ----------------
 
@@ -68,28 +53,13 @@ object RewriteEngine {
         return s
     }
 
-    private fun endpointFor(settings: Settings): String {
-        if (settings.provider == "custom") {
-            val url = settings.customEndpoint.trim()
-            if (url.isEmpty()) throw IllegalStateException("Custom endpoint not configured. Open settings.")
-            return url
-        }
-        val p = Defaults.PROVIDERS[settings.provider]
-            ?: throw IllegalStateException("Unknown provider: ${settings.provider}")
-        return p.endpoint
-    }
-
     private fun promptFor(actionId: String): String =
         Defaults.DEFAULT_PROMPTS[actionId]
             ?: throw IllegalStateException("Unknown action: $actionId")
 
     // ---------------- streaming call ----------------
 
-    /**
-     * Emits content deltas for the given action over the gateway. Cancelling the
-     * collecting coroutine cancels the underlying HTTP call (free abort, like the
-     * extension's port.onDisconnect).
-     */
+    /** Obsolete remote streaming API; fails closed in the local-only build. */
     fun stream(settings: Settings, actionId: String, text: String): Flow<String> =
         streamWithPrompt(settings, promptFor(actionId), text)
 
@@ -237,120 +207,11 @@ object RewriteEngine {
         return if (kept.size == parts.size) t else kept.joinToString(" ")
     }
 
-    fun streamWithPrompt(settings: Settings, prompt: String, text: String): Flow<String> = callbackFlow {
-        if (settings.apiKey.isBlank()) throw IllegalStateException("No API key configured.")
-        val url = endpointFor(settings)
-        val provider = settings.provider
-        val model = settings.model.trim().ifEmpty {
-            Defaults.PROVIDERS[provider]?.defaultModel.orEmpty()
-        }
-        if (model.isEmpty()) throw IllegalStateException("No model configured.")
-
-        val isAnthropic = provider == "anthropic"
-        val userContent = buildUserContent(prompt, text)
-
-        // Anthropic's Messages API is not OpenAI-compatible: `system` is a
-        // separate top-level field, `max_tokens` is required, and recent models
-        // (Opus 4.7/4.8) reject `temperature` — so we omit it there.
-        val body = if (isAnthropic) {
-            JSONObject().apply {
-                put("model", model)
-                put("max_tokens", 8192)
-                put("stream", true)
-                put("system", buildSystemPrompt(settings))
-                put("messages", JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("role", "user")
-                        put("content", userContent)
-                    })
-                })
-            }
-        } else {
-            JSONObject().apply {
-                put("model", model)
-                put("stream", true)
-                put("temperature", settings.temperature)
-                put("messages", JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("role", "system")
-                        put("content", buildSystemPrompt(settings))
-                    })
-                    put(JSONObject().apply {
-                        put("role", "user")
-                        put("content", userContent)
-                    })
-                })
-            }
-        }.toString()
-
-        val reqBuilder = Request.Builder()
-            .url(url)
-            .post(body.toRequestBody(JSON))
-            .header("Content-Type", "application/json")
-        if (isAnthropic) {
-            reqBuilder.header("x-api-key", settings.apiKey)
-            reqBuilder.header("anthropic-version", "2023-06-01")
-        } else {
-            reqBuilder.header("Authorization", "Bearer ${settings.apiKey}")
-            if (provider == "openrouter") {
-                reqBuilder.header("HTTP-Referer", "https://github.com/RohitAg13/openwispr")
-                reqBuilder.header("X-Title", "OpenWispr")
-            }
-        }
-
-        val call = client.newCall(reqBuilder.build())
-
-        // Blocking SSE read on a worker thread; trySend feeds the flow.
-        val worker = Thread {
-            try {
-                call.execute().use { res ->
-                    val resBody = res.body
-                    if (!res.isSuccessful || resBody == null) {
-                        val errText = try {
-                            resBody?.string().orEmpty().ifEmpty { res.message }
-                        } catch (_: Exception) {
-                            res.message
-                        }
-                        close(IllegalStateException("$provider ${res.code}: ${errText.take(300)}"))
-                        return@Thread
-                    }
-                    val source = resBody.source()
-                    while (!source.exhausted()) {
-                        val line = source.readUtf8Line() ?: break
-                        val trimmed = line.trim()
-                        if (!trimmed.startsWith("data:")) continue
-                        val data = trimmed.substring(5).trim()
-                        if (data.isEmpty()) continue
-                        if (data == "[DONE]") break
-                        val delta = parseDelta(data) ?: continue
-                        if (delta.isNotEmpty()) trySend(delta)
-                    }
-                }
-                close()
-            } catch (e: Exception) {
-                // call.cancel() surfaces here as an IOException — treat as clean close.
-                if (call.isCanceled()) close() else close(e)
-            }
-        }
-        worker.start()
-
-        awaitClose { call.cancel() }
-    }
-
-    private fun parseDelta(data: String): String? {
-        return try {
-            val obj = JSONObject(data)
-            // Anthropic Messages API: {"type":"content_block_delta","delta":{"type":"text_delta","text":"..."}}
-            if (obj.optString("type") == "content_block_delta") {
-                return obj.optJSONObject("delta")?.optString("text")?.takeIf { it.isNotEmpty() }
-            }
-            // OpenAI-compatible: {"choices":[{"delta":{"content":"..."}}]}
-            val first = obj.optJSONArray("choices")?.optJSONObject(0) ?: return null
-            first.optJSONObject("delta")?.optString("content")?.takeIf { it.isNotEmpty() }
-                ?: first.optJSONObject("message")?.optString("content")?.takeIf { it.isNotEmpty() }
-        } catch (_: Exception) {
-            null // ignore keep-alive / non-JSON frames, like the extension does
-        }
+    // Legacy helper kept for compatibility with callers compiled against the former
+    // API. There is deliberately no HTTP client or network inference implementation.
+    @Suppress("UNUSED_PARAMETER")
+    fun streamWithPrompt(settings: Settings, prompt: String, text: String): Flow<String> = flow {
+        throw UnsupportedOperationException("Cloud inference is disabled in this Android build")
     }
 
     // ---------------- output cleanup ----------------
