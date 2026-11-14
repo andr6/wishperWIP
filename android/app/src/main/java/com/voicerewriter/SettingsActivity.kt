@@ -623,7 +623,7 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
 /* --------------------------- dictation language --------------------------- */
 
 /**
- * The dictation language row. [forcesWhisper] is true when the user has picked a non-English
+ * The dictation language row. [forcesWhisper] is true when the selected model does not support
  * language while Parakeet is their selected model: we route them to Whisper automatically, and
  * saying so is better than letting them wonder why the engine changed under them.
  */
@@ -636,7 +636,7 @@ private fun LanguageRow(current: String, forcesWhisper: Boolean, onClick: () -> 
         Column(Modifier.weight(1f)) {
             Text("Dictation language", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
             Text(
-                if (forcesWhisper) "Uses Whisper — Parakeet is English-only"
+                if (forcesWhisper) "Uses Whisper — selected Parakeet does not support this language"
                 else "The language you speak while dictating",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
