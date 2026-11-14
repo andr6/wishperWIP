@@ -19,7 +19,9 @@ internal object InsertionTargetPolicy {
         ownPackage: String,
     ): Boolean {
         val root = rootPackage?.toString()?.trim().orEmpty()
-        if (root.isBlank() || root == ownPackage || root in excluded) return false
+        if (root.isBlank() || root == ownPackage || root in excluded ||
+            root.contains("inputmethod") || root.contains("honeyboard")
+        ) return false
         val focused = focusedPackage?.toString()?.trim().orEmpty()
         if (focused.isNotEmpty() && focused != root) return false
         val expected = expectedHost?.trim().orEmpty()
