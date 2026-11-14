@@ -36,8 +36,10 @@ annotations and benchmark pass). WER/CER are case- and punctuation-insensitive
 but **accent-sensitive**.
 
 Do not check any personal audio, transcript, or `results.jsonl` into Git.
-The app data lives under `filesDir/benchmark` and is excluded from Android
-backup by the project's backup policy.
+The test reads from its app-specific **external files** directory, at
+`/sdcard/Android/data/com.voicerewriter/files/benchmark/`. The directory is
+app-scoped and is explicitly populated/retrieved over USB. Do not use shared
+public media storage or commit fixture data into Git.
 
 ## Build and run on an Android ARM64 device
 
@@ -52,7 +54,9 @@ bash scripts/fetch-sherpa-aar.sh
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 
-# After app first launch, copy the private fixture directory.
+# After app first launch, copy the private fixture directory to the same
+# app-specific external path the instrumentation harness actually reads.
+adb shell mkdir -p /sdcard/Android/data/com.voicerewriter/files/benchmark/
 adb push ./benchmark-fixtures/. /sdcard/Android/data/com.voicerewriter/files/benchmark/
 
 adb shell am instrument -w \
@@ -65,15 +69,24 @@ adb pull /sdcard/Android/data/com.voicerewriter/files/benchmark/results.jsonl ./
 adb pull /sdcard/Android/data/com.voicerewriter/files/benchmark/summary.json ./summary.json
 ```
 
-If `adb push` to Android/data is blocked by the device, use Android Studio's
-Device Explorer to upload the files to the application's
-`/data/data/com.voicerewriter/files/benchmark/` directory while debugging.
+If a device restricts `adb push` to `Android/data`, use Android Studio's
+Device Explorer to upload to the same app-specific **external** directory.
+The instrumentation test does not read fixtures from internal `filesDir`.
+
+You can also use the included `android/scripts/run-benchmark.sh` to upload
+fixtures, invoke the test, and retrieve `results.jsonl` and `summary.json`
+with one command. ADB and both installed APKs are prerequisites.
 
 Run on the device rather than CI emulators: this is ARM64 native inference
 and depends on downloaded on-device weights. CI **compiles** the instrumentation
 APK and runs pure JVM metrics tests, but cannot claim ASR quality results.
 
 ## Results and interpretation
+
+Every supplied file is validated for a canonical 44-byte 16-kHz mono PCM16 WAV
+header, exact payload length and maximum 180-second duration **before** ASR.
+Mislabelled 44.1-kHz samples or truncated files fail explicitly rather than
+silently corrupting the benchmark results.
 
 The instrumented test writes **one JSONL record per model/clip/repetition**,
 including model ID, language, run number, latency, real-time factor, WER, CER,
