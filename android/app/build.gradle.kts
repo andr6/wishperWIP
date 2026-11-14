@@ -11,6 +11,7 @@ android {
     defaultConfig {
         applicationId = "com.voicerewriter"
         minSdk = 24
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Play requires targetSdk 36 for every update from 31 Aug 2026. See the API 36
         // behaviour changes handled in this migration (edge-to-edge, predictive back,
         // 16 KB native page alignment) noted at each site.
@@ -114,6 +115,8 @@ dependencies {
     // android.jar version into silent nulls, which would make a JSON round-trip test pass
     // while proving nothing.
     testImplementation("org.json:json:20240303")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 
     implementation(project(":lib")) // on-device whisper.cpp
     implementation(project(":llm")) // on-device llama.cpp (ARM aichat)
