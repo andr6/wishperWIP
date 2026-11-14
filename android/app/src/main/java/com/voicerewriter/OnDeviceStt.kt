@@ -38,6 +38,12 @@ object OnDeviceStt {
     fun resolveModel(modelId: String, language: String = DictationLanguage.DEFAULT): String {
         val known = isParakeet(modelId) || WhisperModelManager.MODELS.any { it.id == modelId }
         val id = if (known) modelId else Defaults.STT_PROVIDERS.getValue("local").defaultModel
+        // A language-specific Whisper transliteration fine-tune pins its decoder
+        // language internally and cannot honestly implement auto-detection.
+        if (DictationLanguage.isAutomatic(language) && !isParakeet(id) &&
+            WhisperModelManager.model(id).isTransliterating) {
+            return WhisperModelManager.DEFAULT_MODEL
+        }
         if (!isParakeet(id) || supportsLanguage(id, language)) return id
         return WhisperModelManager.DEFAULT_MODEL
     }
