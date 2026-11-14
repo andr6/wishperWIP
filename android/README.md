@@ -66,6 +66,9 @@ language and whether optional polish is available; see
 The bubble's hold-to-talk gesture can now be disabled or adjusted (300–800 ms) in
 Settings; see [BUBBLE_CONTROLS.md](BUBBLE_CONTROLS.md) for behavior and testing.
 
+The floating bubble and dictation sheet distinguish local transcription from
+optional polish; see [DICTATION_FEEDBACK.md](DICTATION_FEEDBACK.md).
+
 ## Build
 
 For the fork's P0.0 baseline, Android CI validation and on-device smoke tests,
