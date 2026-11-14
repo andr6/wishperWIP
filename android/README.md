@@ -77,6 +77,10 @@ A queued accessibility insert is no longer treated as delivered until Android
 confirms insertion or clipboard fallback. See
 [DELIVERY_ACKNOWLEDGEMENT.md](DELIVERY_ACKNOWLEDGEMENT.md).
 
+Pending recording metadata is committed via same-directory atomic replacement;
+see [ATOMIC_PENDING_AUDIO.md](ATOMIC_PENDING_AUDIO.md) for recovery guarantees
+and remaining failure cases.
+
 ## Build
 
 For the fork's P0.0 baseline, Android CI validation and on-device smoke tests,
