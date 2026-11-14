@@ -62,57 +62,20 @@ object Defaults {
         "fix" to "Fix grammar, spelling, and punctuation only. Do not change wording, tone, or structure beyond what is required for correctness.",
     )
 
+    // Deliberately only on-device inference providers. Model downloads use the network,
+    // but there are no remotely callable STT/LLM provider definitions.
     val PROVIDERS: Map<String, Provider> = mapOf(
         "local" to Provider(
             id = "local",
             label = "On-device (Qwen / Gemma)",
             endpoint = "",
-            // Recommended on-device default: the dictation-cleanup fine-tune.
             defaultModel = LlmModelManager.FINETUNE_MODEL_ID,
-            keyHelp = "Runs a small LLM on your phone. Offline, private, no API key. Pick and download a model below.",
+            keyHelp = "Runs on the phone after downloading a model. No API key.",
             keyUrl = "",
             modelHint = "On-device model (managed below).",
         ),
-        "anthropic" to Provider(
-            id = "anthropic",
-            label = "Anthropic (Claude)",
-            endpoint = "https://api.anthropic.com/v1/messages",
-            defaultModel = "claude-opus-4-8",
-            keyHelp = "Use your Anthropic API key (starts with sk-ant-). Get one at console.anthropic.com → API Keys.",
-            keyUrl = "https://console.anthropic.com/settings/keys",
-            modelHint = "Anthropic model id, e.g. claude-opus-4-8 (best) or claude-sonnet-4-6 (faster, cheaper).",
-        ),
-        "vercel" to Provider(
-            id = "vercel",
-            label = "Vercel AI Gateway",
-            endpoint = "https://ai-gateway.vercel.sh/v1/chat/completions",
-            defaultModel = "anthropic/claude-sonnet-4",
-            keyHelp = "Get a key at vercel.com/dashboard → AI Gateway → API Keys",
-            keyUrl = "https://vercel.com/dashboard/ai-gateway/api-keys",
-            modelHint = "Format: provider/model (e.g. anthropic/claude-sonnet-4, openai/gpt-4o-mini)",
-        ),
-        "openrouter" to Provider(
-            id = "openrouter",
-            label = "OpenRouter",
-            endpoint = "https://openrouter.ai/api/v1/chat/completions",
-            defaultModel = "anthropic/claude-sonnet-4",
-            keyHelp = "Get a key at openrouter.ai/keys",
-            keyUrl = "https://openrouter.ai/keys",
-            modelHint = "Format: provider/model (browse models at openrouter.ai/models)",
-        ),
-        "custom" to Provider(
-            id = "custom",
-            label = "Custom (OpenAI-compatible)",
-            endpoint = "",
-            defaultModel = "",
-            keyHelp = "Use any OpenAI-compatible /v1/chat/completions endpoint that supports streaming.",
-            keyUrl = "",
-            modelHint = "Whatever model id your endpoint expects.",
-        ),
     )
 
-    // On-device by default: a fresh install is private and needs no API key. Cloud
-    // providers remain available as an opt-in "advanced / fastest" alternative.
     const val DEFAULT_PROVIDER = "local"
     val DEFAULT_MODEL = PROVIDERS.getValue("local").defaultModel
     const val DEFAULT_TEMPERATURE = 0.7
@@ -124,42 +87,13 @@ object Defaults {
             id = "local",
             label = "On-device",
             endpoint = "",
-            // Recommended on-device default: Parakeet (fastest + most accurate).
             defaultModel = ParakeetModelManager.MODEL_ID,
-            keyHelp = "Runs speech-to-text directly on your phone. Fully offline, private, no API key. Pick and download a model below.",
+            keyHelp = "Speech-to-text runs on your phone after model download.",
             keyUrl = "",
             modelHint = "Managed below.",
         ),
-        "groq" to SttProvider(
-            id = "groq",
-            label = "Groq (Whisper)",
-            endpoint = "https://api.groq.com/openai/v1/audio/transcriptions",
-            defaultModel = "whisper-large-v3-turbo",
-            keyHelp = "Use a Groq API key (starts with gsk_). Fast and has a free tier. Get one at console.groq.com → API Keys.",
-            keyUrl = "https://console.groq.com/keys",
-            modelHint = "Groq model id, e.g. whisper-large-v3-turbo (fast) or whisper-large-v3 (most accurate).",
-        ),
-        "openai" to SttProvider(
-            id = "openai",
-            label = "OpenAI (Whisper)",
-            endpoint = "https://api.openai.com/v1/audio/transcriptions",
-            defaultModel = "whisper-1",
-            keyHelp = "Use an OpenAI API key (starts with sk-). Get one at platform.openai.com → API Keys.",
-            keyUrl = "https://platform.openai.com/api-keys",
-            modelHint = "OpenAI transcription model, e.g. whisper-1 or gpt-4o-mini-transcribe.",
-        ),
-        "custom" to SttProvider(
-            id = "custom",
-            label = "Custom (OpenAI-compatible)",
-            endpoint = "",
-            defaultModel = "",
-            keyHelp = "Any OpenAI-compatible /v1/audio/transcriptions endpoint accepting multipart audio.",
-            keyUrl = "",
-            modelHint = "Whatever transcription model id your endpoint expects.",
-        ),
     )
 
-    // On-device speech-to-text by default (Parakeet). Cloud STT is opt-in.
     const val DEFAULT_STT_PROVIDER = "local"
 
     // ---------------- voice modes ----------------
