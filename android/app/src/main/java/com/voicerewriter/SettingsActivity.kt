@@ -267,7 +267,14 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
                     ParakeetV3ModelManager.MODEL_ID -> ParakeetV3ModelManager.download(context) { p -> dlProgress = p }
                     else -> WhisperModelManager.download(context, id) { p -> dlProgress = p }
                 }
-                sttModel = id; dlId = null; modelsRev++; persist()
+                dlId = null; modelsRev++
+                if (OnDeviceStt.resolveModel(id, sttLanguage) == id) {
+                    sttModel = id; persist()
+                } else {
+                    Toast.makeText(context,
+                        "Model downloaded. Choose a supported language to activate it.",
+                        Toast.LENGTH_LONG).show()
+                }
             } catch (e: Exception) {
                 dlId = null; Toast.makeText(context, e.message ?: "Download failed", Toast.LENGTH_LONG).show()
             }
@@ -405,7 +412,16 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
                                 ModelRow(
                                     name = m.name, meta = m.meta, recommended = m.recommended,
                                     state = sttModelState(m.id), progress = dlProgress,
-                                    onGet = { downloadStt(m.id) }, onUse = { sttModel = m.id; persist() },
+                                    onGet = { downloadStt(m.id) },
+                                    onUse = {
+                                        if (OnDeviceStt.resolveModel(m.id, sttLanguage) == m.id) {
+                                            sttModel = m.id; persist()
+                                        } else {
+                                            Toast.makeText(context,
+                                                "This model cannot detect the selected language. Use Parakeet v3 or multilingual Whisper.",
+                                                Toast.LENGTH_LONG).show()
+                                        }
+                                    },
                                     onDelete = {
                                         pendingDelete = DeletableModel(ModelKind.STT, m.id, m.name, m.meta)
                                     },
@@ -748,7 +764,7 @@ private fun sttModelOptions(recommendedId: String): List<SttModelOption> = build
     add(
         SttModelOption(
             ParakeetModelManager.MODEL_ID, "Parakeet",
-            "${ParakeetModelManager.SIZE_LABEL} · most accurate",
+            "${ParakeetModelManager.SIZE_LABEL} · English only",
             OnDeviceStt.isParakeet(recommendedId),
         ),
     )
