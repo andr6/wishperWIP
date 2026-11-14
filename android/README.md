@@ -63,6 +63,9 @@ Settings now shows whether the effective speech model is installed for your sele
 language and whether optional polish is available; see
 [OFFLINE_READINESS.md](OFFLINE_READINESS.md).
 
+The bubble's hold-to-talk gesture can now be disabled or adjusted (300–800 ms) in
+Settings; see [BUBBLE_CONTROLS.md](BUBBLE_CONTROLS.md) for behavior and testing.
+
 ## Build
 
 For the fork's P0.0 baseline, Android CI validation and on-device smoke tests,
