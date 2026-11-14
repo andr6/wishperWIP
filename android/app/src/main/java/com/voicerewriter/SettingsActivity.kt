@@ -384,6 +384,49 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
                 )
             }
 
+            // ---------------- OFFLINE READINESS ----------------
+            // This is a local disk-state check, not a network probe. modelRev
+            // forces re-evaluation after a download/delete completes.
+            modelsRev
+            val effectiveSpeech = OnDeviceStt.resolveModel(context, sttModel, sttLanguage)
+            val offline = OfflineReadiness.evaluate(
+                selectedModel = sttModel,
+                effectiveModel = effectiveSpeech,
+                language = sttLanguage,
+                speechInstalled = OnDeviceStt.isReady(context, sttModel, sttLanguage),
+                polishEnabled = polishLevel != PolishLevel.OFF,
+                polishInstalled = LlmModelManager.isReady(context, model),
+                polishModel = model,
+            )
+            Section("Offline readiness") {
+                Card {
+                    Padded {
+                        Label(if (offline.canDictateOffline) "Speech ready on this device" else "Speech model needed")
+                        Spacer(Modifier.height(4.dp))
+                        Text(offline.speechMessage, style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        offline.speechAction?.takeIf { dlId == null }?.let { missing ->
+                            Spacer(Modifier.height(12.dp))
+                            PillButton("Download speech model") { downloadStt(missing) }
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        Label("Optional text polish")
+                        Spacer(Modifier.height(4.dp))
+                        Text(offline.polishMessage, style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        offline.polishAction?.takeIf { dlId == null }?.let { missing ->
+                            Spacer(Modifier.height(12.dp))
+                            PillOutline("Download optional polish") { downloadLlm(missing) }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Text("Models can be downloaded online; installed speech models work offline. " +
+                            "This check does not test the microphone, model loading, or insertion.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
             // ---------------- VOICE · TRANSCRIPTION ----------------
             Section("Voice · transcription") {
                 Card {
