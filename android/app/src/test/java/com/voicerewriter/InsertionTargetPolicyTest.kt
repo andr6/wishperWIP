@@ -26,6 +26,8 @@ class InsertionTargetPolicyTest {
         assertFalse(mayInsert(null, "android"))
         assertFalse(mayInsert(null, "com.android.launcher"))
         assertFalse(mayInsert(null, "com.sec.android.app.launcher"))
+        assertFalse(mayInsert(null, "com.google.android.inputmethod.latin"))
+        assertFalse(mayInsert(null, "com.samsung.android.honeyboard"))
     }
 
     @Test fun missingRootCannotBeTrusted() {
