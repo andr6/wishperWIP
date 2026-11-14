@@ -133,6 +133,8 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
     var reviewBeforeInsert by remember { mutableStateOf(false) }
     var parakeetHotwordsExperimental by remember { mutableStateOf(false) }
     var bubbleOnlyOnFields by remember { mutableStateOf(true) }
+    var bubbleHoldEnabled by remember { mutableStateOf(BubbleGestureConfig.DEFAULT_HOLD_ENABLED) }
+    var bubbleHoldDelayMs by remember { mutableFloatStateOf(BubbleGestureConfig.DEFAULT_HOLD_DELAY_MS.toFloat()) }
     var keepHistory by remember { mutableStateOf(DictationHistory.keepHistory(context)) }
     var audioKeepDays by remember { mutableStateOf(PendingAudio.keepDays(context)) }
 
@@ -170,6 +172,8 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
         defaultMode = s.defaultMode
         deterministicCleanup = s.deterministicCleanup; polishLevel = s.polishLevel
         vadAutoStop = s.vadAutoStop; bubbleOnlyOnFields = s.bubbleOnlyOnFields
+        bubbleHoldEnabled = s.bubbleHoldEnabled
+        bubbleHoldDelayMs = s.bubbleHoldDelayMs.toFloat()
         reviewBeforeInsert = s.reviewBeforeInsert
         parakeetHotwordsExperimental = s.parakeetHotwordsExperimental
         a11yEnabled = SetupUtils.accessibilityEnabled(context)
@@ -225,6 +229,8 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
         sttModel = sttModel.trim(), sttLanguage = sttLanguage, defaultMode = defaultMode,
         deterministicCleanup = deterministicCleanup, polishLevel = polishLevel,
         vadAutoStop = vadAutoStop, bubbleOnlyOnFields = bubbleOnlyOnFields,
+        bubbleHoldEnabled = bubbleHoldEnabled,
+        bubbleHoldDelayMs = BubbleGestureConfig.normalizeDelay(bubbleHoldDelayMs.toInt()),
         reviewBeforeInsert = reviewBeforeInsert,
         hasCompletedOnboarding = true,
         parakeetHotwordsExperimental = parakeetHotwordsExperimental,
@@ -569,6 +575,37 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
                         else "Appear only when you can type",
                         bubbleOnlyOnFields,
                     ) { bubbleOnlyOnFields = it; persist() }
+                    Divider()
+                    ToggleRow(
+                        "Hold to talk",
+                        "Keep your finger on the bubble to dictate; release to send. A short tap still toggles recording.",
+                        bubbleHoldEnabled,
+                    ) { bubbleHoldEnabled = it; persist() }
+                    if (bubbleHoldEnabled) {
+                        Divider()
+                        Padded {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Label("Hold activation time")
+                                Text("${bubbleHoldDelayMs.toInt()} ms",
+                                    style = MonoEyebrow,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Slider(
+                                value = bubbleHoldDelayMs,
+                                onValueChange = {
+                                    bubbleHoldDelayMs = BubbleGestureConfig.normalizeDelay(it.toInt()).toFloat()
+                                },
+                                onValueChangeFinished = { persist() },
+                                valueRange = BubbleGestureConfig.MIN_HOLD_DELAY_MS.toFloat()..
+                                    BubbleGestureConfig.MAX_HOLD_DELAY_MS.toFloat(),
+                                steps = 9,
+                            )
+                            Text("Shorter activates sooner; longer helps avoid accidental holds. " +
+                                "The original setting is 450 ms.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
             }
 
