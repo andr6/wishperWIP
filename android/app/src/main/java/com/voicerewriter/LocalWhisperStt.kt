@@ -68,7 +68,7 @@ object LocalWhisperStt {
             // English dictation keeps greedy + single-segment until someone measures it the same
             // way; the same fix may well help there too, and that deserves its own numbers.
             val beamSize = if (model.isTransliterating) 5 else 1
-                val raw = whisper.transcribeData(
+            val raw = whisper.transcribeData(
                 samples,
                 printTimestamp = false,
                 prompt = prompt,
