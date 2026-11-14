@@ -73,6 +73,10 @@ Cross-app insertion now checks the original recording host and protects Unicode
 cursor offsets; see [INSERTION_SAFETY.md](INSERTION_SAFETY.md) for safety and
 regression coverage.
 
+A queued accessibility insert is no longer treated as delivered until Android
+confirms insertion or clipboard fallback. See
+[DELIVERY_ACKNOWLEDGEMENT.md](DELIVERY_ACKNOWLEDGEMENT.md).
+
 ## Build
 
 For the fork's P0.0 baseline, Android CI validation and on-device smoke tests,

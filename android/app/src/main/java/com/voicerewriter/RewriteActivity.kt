@@ -242,16 +242,22 @@ class RewriteActivity : ComponentActivity() {
         // nudged to grant the permission again) is nagging, not information.
         // The host was captured before the microphone started. Never paste
         // into a different application just because it took focus while ASR ran.
-        val enqueued = OpenWisprAccessibilityService.enqueueInsert(result, dictationHostPkg)
+        val id = pendingId
+        val enqueued = OpenWisprAccessibilityService.enqueueInsert(result, dictationHostPkg, id)
+        // No accessibility service: the clipboard is the actual delivery. Do
+        // not settle or discard the durable recording unless that write works.
         if (!enqueued) setClipboard(result)
         LastDictation.set(this, result)
-        // Delivery is confirmed — inserted, or on the clipboard where the user can reach it —
-        // and the transcript is already in history. Only now is the recording settled, which
-        // is what makes it eligible for retention pruning.
-        pendingId?.let { id ->
-            val ctx = applicationContext
+        if (id != null) {
             pendingId = null
-            Thread { runCatching { PendingAudio.settle(ctx, id, result) } }.start()
+            // Accessibility has accepted a request, NOT delivered it. The
+            // service holds its in-flight claim until ACTION_SET_TEXT, paste,
+            // or the final clipboard fallback succeeds. Process death leaves
+            // the on-disk recording unsettled for a Home retry.
+            if (!enqueued) {
+                val ctx = applicationContext
+                Thread { runCatching { PendingAudio.settle(ctx, id, result) } }.start()
+            }
         }
         postFixNotification()
         setResult(Activity.RESULT_CANCELED)
