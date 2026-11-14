@@ -263,7 +263,10 @@ class BubbleService : Service() {
     private fun addBubble() {
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
-        val view = BubbleView(this).apply { dark = isNightMode() }
+        val view = BubbleView(this).apply {
+            dark = isNightMode()
+            contentDescription = DictationBubbleFeedback.IDLE
+        }
 
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -496,6 +499,14 @@ class BubbleService : Service() {
     /** Set the drawn state and move the window to match it. */
     private fun setState(state: BubbleView.State) {
         val v = bubble ?: return
+        v.contentDescription = when (state) {
+            BubbleView.State.IDLE -> DictationBubbleFeedback.IDLE
+            BubbleView.State.LIFTED -> "Move dictation bubble. Release to reposition."
+            BubbleView.State.LISTENING -> DictationBubbleFeedback.LISTENING
+            BubbleView.State.PROCESSING -> v.processingPhase.accessibilityDescription
+            BubbleView.State.INSERTED -> DictationBubbleFeedback.INSERTED
+            BubbleView.State.COPIED -> DictationBubbleFeedback.COPIED
+        }
         if (v.state == state) return
         v.state = state
         redock(animate = true)
@@ -652,11 +663,12 @@ class BubbleService : Service() {
      * activity holds focus while this runs, so the host field it was gating on isn't
      * focused and the gate would otherwise hide the bubble mid-dictation.
      */
-    fun showWorking() {
+    fun showWorking(phase: DictationWorkPhase = DictationWorkPhase.TRANSCRIBING) {
         mainHandler.post {
             holdUntil = 0L
             recording = true
             ensureVisible()
+            bubble?.processingPhase = phase
             setState(BubbleView.State.PROCESSING)
         }
     }
