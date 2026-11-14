@@ -15,7 +15,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
- * On-device speech-to-text via the NVIDIA Parakeet-TDT-0.6b-v2 (int8) transducer, served by
+ * On-device speech-to-text via the NVIDIA Parakeet TDT v2/v3 INT8 transducers, served by
  * sherpa-onnx (vendored AAR). Faster and more accurate than whisper.cpp on the S25 (p50 ~238ms,
  * prose WER below whisper-small) and — being a transducer — its latency stays flat with clip
  * length, so the disfluent tail no longer blows up the p95.
@@ -86,14 +86,15 @@ object LocalParakeetStt {
         return out
     }
 
-    private fun buildRecognizer(context: Context, hotwords: File?): OfflineRecognizer {
+    private fun buildRecognizer(context: Context, modelId: String, hotwords: File?): OfflineRecognizer {
+        val v3 = modelId == ParakeetV3ModelManager.MODEL_ID
         val model = OfflineModelConfig(
             transducer = OfflineTransducerModelConfig(
-                encoder = ParakeetModelManager.encoderPath(context),
-                decoder = ParakeetModelManager.decoderPath(context),
-                joiner = ParakeetModelManager.joinerPath(context),
+                encoder = if (v3) ParakeetV3ModelManager.encoderPath(context) else ParakeetModelManager.encoderPath(context),
+                decoder = if (v3) ParakeetV3ModelManager.decoderPath(context) else ParakeetModelManager.decoderPath(context),
+                joiner = if (v3) ParakeetV3ModelManager.joinerPath(context) else ParakeetModelManager.joinerPath(context),
             ),
-            tokens = ParakeetModelManager.tokensPath(context),
+            tokens = if (v3) ParakeetV3ModelManager.tokensPath(context) else ParakeetModelManager.tokensPath(context),
             numThreads = WhisperCpuConfig.preferredThreadCount, // same big-core budget as whisper
             modelType = "nemo_transducer",
             modelingUnit = if (hotwords != null) "bpe" else "",
@@ -112,12 +113,17 @@ object LocalParakeetStt {
 
     /** Transcribe [samples] (16 kHz mono, normalized -1..1). [biasPrompt] is the shared vocab glossary (see class note). */
     suspend fun transcribe(context: Context, settings: Settings, samples: FloatArray, biasPrompt: String? = null): String {
-        if (!ParakeetModelManager.isReady(context)) {
+        val modelId = settings.sttModel
+        val v3 = modelId == ParakeetV3ModelManager.MODEL_ID
+        val ready = if (v3) ParakeetV3ModelManager.isReady(context) else ParakeetModelManager.isReady(context)
+        if (!ready) {
             throw IllegalStateException("Parakeet model not downloaded. Open Settings → Voice → Download model.")
         }
-        val terms = if (settings.parakeetHotwordsExperimental) hotwordsFromBiasPrompt(biasPrompt) else emptyList()
-        val hotwords = writeHotwordsFile(context, terms)
-        val key = hotwords?.let { "hotwords:" + terms.joinToString(",") }
+        // V3 ships a different tokenizer. The v2 BPE vocabulary asset must never be
+        // used for its hotwords; greedy decoding remains the conservative default.
+        val terms = if (!v3 && settings.parakeetHotwordsExperimental) hotwordsFromBiasPrompt(biasPrompt) else emptyList()
+        val hotwords = if (!v3) writeHotwordsFile(context, terms) else null
+        val key = "$modelId:" + (hotwords?.let { "hotwords:" + terms.joinToString(",") } ?: "greedy")
         val seconds = samples.size / AudioRecorder.SAMPLE_RATE.toFloat()
         val t0 = System.nanoTime()
         val rec = loadLock.withLock {
@@ -125,7 +131,7 @@ object LocalParakeetStt {
             if (cached != null && recognizerKey == key) {
                 cached
             } else {
-                withContext(Dispatchers.IO) { buildRecognizer(context, hotwords) }
+                withContext(Dispatchers.IO) { buildRecognizer(context, modelId, hotwords) }
                     .also { recognizer = it; recognizerKey = key }
             }
         }
@@ -152,13 +158,16 @@ object LocalParakeetStt {
 
     /** Preload the recognizer ahead of the first dictation (e.g. on service start). Best-effort, greedy-only (no vocab yet at this point). */
     @Suppress("UNUSED_PARAMETER")
-    suspend fun warm(context: Context, biasPrompt: String? = null) {
-        if (!ParakeetModelManager.isReady(context)) return
+    suspend fun warm(context: Context, biasPrompt: String? = null, modelId: String = ParakeetModelManager.MODEL_ID) {
+        val ready = if (modelId == ParakeetV3ModelManager.MODEL_ID)
+            ParakeetV3ModelManager.isReady(context) else ParakeetModelManager.isReady(context)
+        if (!ready) return
         loadLock.withLock {
-            if (recognizer != null) return
+            val key = "$modelId:greedy"
+            if (recognizer != null && recognizerKey == key) return
             val t0 = System.nanoTime()
-            recognizer = withContext(Dispatchers.IO) { buildRecognizer(context, hotwords = null) }
-            recognizerKey = null
+            recognizer = withContext(Dispatchers.IO) { buildRecognizer(context, modelId, hotwords = null) }
+            recognizerKey = key
             Log.i("LocalParakeetStt", "warm load=${(System.nanoTime() - t0) / 1_000_000}ms")
         }
     }
