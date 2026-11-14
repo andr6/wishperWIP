@@ -49,8 +49,8 @@ data class Settings(
     val sttEndpoint: String = "", // only used when sttProvider == "custom"
     val sttKey: String = "",
     val sttModel: String = "",
-    // Dictation language handed to whisper.cpp. Parakeet is English-only, so a non-English
-    // choice also forces the engine over to Whisper — see [OnDeviceStt.resolveModel].
+    // Explicit language or "auto" detection. Parakeet v2 is English-only;
+    // unsupported/manual languages and auto mode use multilingual engines.
     val sttLanguage: String = DictationLanguage.DEFAULT,
     // --- Dictation / rewrite behavior ---
     val defaultMode: String = Defaults.MODE_DICTATE, // "dictate" | "rewrite"
