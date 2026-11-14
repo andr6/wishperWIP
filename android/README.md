@@ -56,6 +56,9 @@ Parakeet v3 and multilingual Whisper detect languages on-device; see
 Native inference lifetime hardening and Android device stress-test gates are
 outlined in [NATIVE_LIFECYCLE.md](NATIVE_LIFECYCLE.md).
 
+A future Qwen3-ASR 0.6B engine is subject to the measurement-based decision
+in [QWEN3_ASR_GATE.md](QWEN3_ASR_GATE.md); no new inference engine is enabled.
+
 ## Build
 
 For the fork's P0.0 baseline, Android CI validation and on-device smoke tests,
