@@ -71,23 +71,23 @@ object LocalLlmEngine {
             // Previously we unlocked immediately after load, allowing another
             // rewrite to cleanUp/reload the model while tokens were in flight.
             Log.i("LocalLlmEngine", "model=${settings.model} inputChars=${user.length}")
-        // Suppress emission once the model starts repeating, but DON'T cancel the
-        // upstream — cancelling surfaces as a CancellationException and the caller
-        // would never see normal completion. Let generation finish (it's capped).
-        val acc = StringBuilder()
-        var stopped = false
-        emitAll(
-            engine.sendUserPrompt(user, predictLength = predictLengthFor(text))
-                .transform { token ->
-                    if (stopped) return@transform
-                    acc.append(token)
-                    if (acc.contains("<<<") || acc.contains("TEXT>>>") || RewriteEngine.looksRepeating(acc)) {
-                        stopped = true
-                    } else {
-                        emit(token)
+            // Suppress emission once the model starts repeating, but DON'T cancel the
+            // upstream — cancelling surfaces as a CancellationException and the caller
+            // would never see normal completion. Let generation finish (it's capped).
+            val acc = StringBuilder()
+            var stopped = false
+            emitAll(
+                engine.sendUserPrompt(user, predictLength = predictLengthFor(text))
+                    .transform { token ->
+                        if (stopped) return@transform
+                        acc.append(token)
+                        if (acc.contains("<<<") || acc.contains("TEXT>>>") || RewriteEngine.looksRepeating(acc)) {
+                            stopped = true
+                        } else {
+                            emit(token)
+                        }
                     }
-                }
-        )
+            )
             Log.i("LocalLlmEngine", "outputChars=${acc.length}")
         }
     }
