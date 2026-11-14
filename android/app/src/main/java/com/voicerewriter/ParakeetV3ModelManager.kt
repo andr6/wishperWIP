@@ -90,9 +90,10 @@ object ParakeetV3ModelManager {
         for (asset in ASSETS) {
             val target = File(dir, asset.name)
             if (verified(target, asset)) continue
-            // A stale/corrupted complete file and its downloader sidecars must not
-            // be mistaken for a valid input on the next retry.
-            ModelDownloader.deleteWithSidecars(target)
+            // Keep valid .part/.etag sidecars from an interrupted download so
+            // ModelDownloader can resume a ~652 MB transfer. Only clear a
+            // completed target that fails digest or size verification.
+            if (target.exists()) ModelDownloader.deleteWithSidecars(target)
             ModelDownloader.fetch(sourceUrl(asset.name), target) { p ->
                 if (asset.name == "encoder.int8.onnx") onProgress(p)
             }
