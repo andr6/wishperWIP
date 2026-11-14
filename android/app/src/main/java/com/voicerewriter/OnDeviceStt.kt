@@ -4,21 +4,29 @@ import android.content.Context
 
 /**
  * Routes on-device transcription to the right local engine based on the selected [Settings.sttModel]:
- * the Parakeet transducer (sherpa-onnx) for `"parakeet"`, otherwise whisper.cpp (tiny/base/small).
+ * the Parakeet v2/v3 transducer (sherpa-onnx) or whisper.cpp (tiny/base/small).
  * Keeps call sites (RewriteActivity, EvalService, BubbleService) engine-agnostic.
  */
 object OnDeviceStt {
 
-    fun isParakeet(modelId: String): Boolean = modelId == ParakeetModelManager.MODEL_ID
+    fun isParakeet(modelId: String): Boolean =
+        modelId == ParakeetModelManager.MODEL_ID || modelId == ParakeetV3ModelManager.MODEL_ID
+
+    /** V2 only understands English; V3 automatically identifies its 25 languages. */
+    fun supportsLanguage(modelId: String, language: String): Boolean = when (modelId) {
+        ParakeetModelManager.MODEL_ID -> DictationLanguage.isEnglish(language)
+        ParakeetV3ModelManager.MODEL_ID -> ParakeetV3ModelManager.supports(language)
+        else -> true
+    }
 
     /**
      * Resolve a stored [Settings.sttModel] to a concrete on-device model id. A blank or
      * unrecognized value (e.g. a fresh install, where the field is empty) falls back to the
      * local provider's default — Parakeet — so the recommended engine is used by default.
      *
-     * [language] is the dictation language. Parakeet (NVIDIA TDT 0.6B) is English-only: it has
-     * no Hindi, and no amount of settings will give it one. Rather than let a user pick Hindi
-     * and silently get English-shaped output from an English-only transducer, a non-English
+     * [language] is the dictation language. Parakeet v2 is English-only: it has
+     * no Hindi; v3 supports 25 European languages. Rather than let a user pick Hindi
+     * and silently get English-shaped output from an unsupported transducer, an unsupported
      * language routes to Whisper, whose ggml builds are multilingual. This is the one place
      * that decision lives, so every call site (dictation, warm-up, readiness) agrees.
      *
@@ -30,18 +38,18 @@ object OnDeviceStt {
     fun resolveModel(modelId: String, language: String = DictationLanguage.DEFAULT): String {
         val known = isParakeet(modelId) || WhisperModelManager.MODELS.any { it.id == modelId }
         val id = if (known) modelId else Defaults.STT_PROVIDERS.getValue("local").defaultModel
-        if (DictationLanguage.isEnglish(language) || !isParakeet(id)) return id
+        if (!isParakeet(id) || supportsLanguage(id, language)) return id
         return WhisperModelManager.DEFAULT_MODEL
     }
 
     /**
-     * Same as [resolveModel] but able to see what is actually on disk, so a Hindi user who has
+     * Same as [resolveModel] but able to see what is actually on disk, so a user of an unsupported language who has
      * `small` downloaded gets `small` rather than the registry default. Falls back to the
      * default when nothing better is present — the caller still has to handle "not downloaded".
      */
     fun resolveModel(context: Context, modelId: String, language: String): String {
         val id = resolveModel(modelId, language)
-        if (DictationLanguage.isEnglish(language) || !isParakeet(modelId)) return id
+        if (!isParakeet(modelId) || supportsLanguage(modelId, language)) return id
         // Biggest-first: GENERIC is ordered tiny -> small, and accuracy tracks size. It excludes
         // the transliterating fine-tunes on purpose: the Hinglish model emits Roman script, so
         // handing it a Tamil or Marathi dictation would produce confident nonsense.
@@ -56,7 +64,8 @@ object OnDeviceStt {
     @JvmOverloads
     fun isReady(context: Context, modelId: String, language: String = DictationLanguage.DEFAULT): Boolean =
         resolveModel(context, modelId, language).let { id ->
-            if (isParakeet(id)) ParakeetModelManager.isReady(context)
+            if (id == ParakeetModelManager.MODEL_ID) ParakeetModelManager.isReady(context)
+            else if (id == ParakeetV3ModelManager.MODEL_ID) ParakeetV3ModelManager.isReady(context)
             else WhisperModelManager.isReady(context, id)
         }
 
@@ -74,7 +83,7 @@ object OnDeviceStt {
         biasPrompt: String? = null,
         language: String = DictationLanguage.DEFAULT,
     ) = resolveModel(context, modelId, language).let { id ->
-        if (isParakeet(id)) LocalParakeetStt.warm(context, biasPrompt)
+        if (isParakeet(id)) LocalParakeetStt.warm(context, biasPrompt, id)
         else LocalWhisperStt.warm(context, id)
     }
 }
