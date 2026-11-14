@@ -31,12 +31,16 @@ and device acceptance tests.
   `LocalLlmEngine` (llama.cpp). Its obsolete remote inference entry points
   reject execution.
 - **`OnDeviceStt`** selects local `LocalParakeetStt` (Sherpa-ONNX,
-  current English Parakeet v2) or `LocalWhisperStt` (multilingual whisper.cpp).
+  English Parakeet v2 or optional multilingual Parakeet v3 preview) or
+  `LocalWhisperStt` (multilingual whisper.cpp).
   Audio capture is 16-kHz mono PCM. Model weights are downloaded into app
   storage; they are never sent to external inference providers.
 - **`ModelDownloader`** is the only type of application component that needs
   network access for provisioning STT/LLM weights.
 - **Personalization** includes an on-device vocabulary and correction history.
+
+See [PARAKEET_V3.md](PARAKEET_V3.md) for pinned v3 model provenance, setup
+and Android compatibility checks. V3 is not the default model.
 
 ## Build
 
