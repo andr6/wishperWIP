@@ -15,7 +15,7 @@ internal object LocalOnlyPolicy {
             LlmModelManager.MODELS.any { it.id == id }
         } ?: LlmModelManager.DEFAULT_MODEL
         val localStt = input.sttModel.takeIf { id ->
-            id == ParakeetModelManager.MODEL_ID ||
+            OnDeviceStt.isParakeet(id) ||
                 WhisperModelManager.MODELS.any { it.id == id }
         } ?: ParakeetModelManager.MODEL_ID
 

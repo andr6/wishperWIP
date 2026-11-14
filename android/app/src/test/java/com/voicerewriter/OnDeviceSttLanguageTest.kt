@@ -49,4 +49,35 @@ class OnDeviceSttLanguageTest {
         // on Whisper because of a bad preference write.
         assertEquals(parakeet, OnDeviceStt.resolveModel(parakeet, "klingon"))
     }
+
+    @Test fun `v3 accepts English Portuguese and Spanish without Whisper fallback`() {
+        for (language in listOf("en", "pt", "es")) {
+            assertEquals(
+                "Parakeet v3 should run natively in $language",
+                ParakeetV3ModelManager.MODEL_ID,
+                OnDeviceStt.resolveModel(ParakeetV3ModelManager.MODEL_ID, language),
+            )
+        }
+    }
+
+    @Test fun `v3 keeps all 25 supported European languages`() {
+        assertEquals(25, ParakeetV3ModelManager.SUPPORTED_LANGUAGES.size)
+        ParakeetV3ModelManager.SUPPORTED_LANGUAGES.forEach { language ->
+            assertEquals(ParakeetV3ModelManager.MODEL_ID,
+                OnDeviceStt.resolveModel(ParakeetV3ModelManager.MODEL_ID, language))
+        }
+    }
+
+    @Test fun `v3 routes unsupported Hindi to multilingual Whisper`() {
+        val actual = OnDeviceStt.resolveModel(ParakeetV3ModelManager.MODEL_ID, "hi")
+        assertTrue(WhisperModelManager.MODELS.any { it.id == actual })
+        assertTrue(!OnDeviceStt.isParakeet(actual))
+    }
+
+    @Test fun `v2 remains English only while v3 is identified as Parakeet`() {
+        assertTrue(OnDeviceStt.isParakeet(ParakeetModelManager.MODEL_ID))
+        assertTrue(OnDeviceStt.isParakeet(ParakeetV3ModelManager.MODEL_ID))
+        assertEquals(WhisperModelManager.DEFAULT_MODEL,
+            OnDeviceStt.resolveModel(ParakeetModelManager.MODEL_ID, "pt"))
+    }
 }

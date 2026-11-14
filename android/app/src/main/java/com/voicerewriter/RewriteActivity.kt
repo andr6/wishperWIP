@@ -442,7 +442,13 @@ class RewriteActivity : ComponentActivity() {
         if (s.sttProvider != "local") return null
         val current = OnDeviceStt.resolveModel(this, s.sttModel, s.sttLanguage)
         if (!OnDeviceStt.isParakeet(current)) {
-            return if (ParakeetModelManager.isReady(this)) ParakeetModelManager.MODEL_ID to "Parakeet" else null
+            return when {
+                ParakeetV3ModelManager.supports(s.sttLanguage) && ParakeetV3ModelManager.isReady(this) ->
+                    ParakeetV3ModelManager.MODEL_ID to "Parakeet v3"
+                DictationLanguage.isEnglish(s.sttLanguage) && ParakeetModelManager.isReady(this) ->
+                    ParakeetModelManager.MODEL_ID to "Parakeet v2"
+                else -> null
+            }
         }
         // GENERIC, not MODELS: the alternate engine is a general-purpose fallback, and the
         // Hinglish fine-tune would answer an English dictation in romanized Hindi.
@@ -722,7 +728,9 @@ class RewriteActivity : ComponentActivity() {
                     // spinner and start the moment it lands; only a genuinely stalled or
                     // failed download should reach the error below. Nudge the download too,
                     // in case it hasn't started yet (e.g. this is a resumed process).
-                    if (OnDeviceStt.isParakeet(s.sttModel)) ParakeetModelManager.ensureDownloading(this)
+                    if (s.sttModel == ParakeetModelManager.MODEL_ID) ParakeetModelManager.ensureDownloading(this)
+                    // v3 preview downloads are explicitly started from Settings. Do not
+                    // silently fetch ~671MB on mobile data when a user taps the bubble.
                     error = null
                     stage = Stage.WAITING_MODEL
                     scope.launch {

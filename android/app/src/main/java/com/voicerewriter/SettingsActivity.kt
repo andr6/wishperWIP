@@ -236,11 +236,20 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
         BubbleService.instance?.refreshGating()
     }
 
-    fun sttModelState(id: String): String = when {
-        sttModel == id -> "active"
-        dlId == id -> "downloading"
-        OnDeviceStt.isReady(context, id, sttLanguage) -> "downloaded"
-        else -> "idle"
+    fun sttModelState(id: String): String {
+        // Model rows report the actual downloaded bundle. Routing a v2 row through
+        // Whisper when PT is selected would incorrectly mark Parakeet as ready.
+        val ready = when (id) {
+            ParakeetModelManager.MODEL_ID -> ParakeetModelManager.isReady(context)
+            ParakeetV3ModelManager.MODEL_ID -> ParakeetV3ModelManager.isReady(context)
+            else -> WhisperModelManager.isReady(context, id)
+        }
+        return when {
+            dlId == id -> "downloading"
+            ready && sttModel == id -> "active"
+            ready -> "downloaded"
+            else -> "idle"
+        }
     }
     fun llmModelState(id: String): String = when {
         provider == "local" && model == id -> "active"
@@ -253,8 +262,11 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
         dlId = id; dlProgress = 0f
         launch {
             try {
-                if (OnDeviceStt.isParakeet(id)) ParakeetModelManager.download(context) { p -> dlProgress = p }
-                else WhisperModelManager.download(context, id) { p -> dlProgress = p }
+                when (id) {
+                    ParakeetModelManager.MODEL_ID -> ParakeetModelManager.download(context) { p -> dlProgress = p }
+                    ParakeetV3ModelManager.MODEL_ID -> ParakeetV3ModelManager.download(context) { p -> dlProgress = p }
+                    else -> WhisperModelManager.download(context, id) { p -> dlProgress = p }
+                }
                 sttModel = id; dlId = null; modelsRev++; persist()
             } catch (e: Exception) {
                 dlId = null; Toast.makeText(context, e.message ?: "Download failed", Toast.LENGTH_LONG).show()
@@ -270,8 +282,11 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
         launch {
             val freed = when (target.kind) {
                 ModelKind.STT ->
-                    if (OnDeviceStt.isParakeet(target.id)) ParakeetModelManager.delete(context)
-                    else WhisperModelManager.delete(context, target.id)
+                    when (target.id) {
+                        ParakeetModelManager.MODEL_ID -> ParakeetModelManager.delete(context)
+                        ParakeetV3ModelManager.MODEL_ID -> ParakeetV3ModelManager.delete(context)
+                        else -> WhisperModelManager.delete(context, target.id)
+                    }
                 ModelKind.LLM -> LlmModelManager.delete(context, target.id)
             }
             modelsRev++
@@ -328,10 +343,9 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
                     current = sttLanguage,
                     onPick = { code ->
                         sttLanguage = code
-                        // Parakeet cannot do anything but English, so a non-English pick moves the
-                        // selected model too. Doing it here keeps Settings showing the model that
-                        // will actually run, rather than one the router would quietly override.
-                        if (!DictationLanguage.isEnglish(code) && OnDeviceStt.isParakeet(OnDeviceStt.resolveModel(sttModel))) {
+                        // Keep v3 selected for its 25 languages, including PT-PT and Spanish.
+                        // Unsupported languages still fall back to multilingual Whisper.
+                        if (OnDeviceStt.isParakeet(sttModel) && !OnDeviceStt.supportsLanguage(sttModel, code)) {
                             sttModel = OnDeviceStt.resolveModel(context, sttModel, code)
                         }
                         pickingLanguage = false
@@ -400,8 +414,8 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
                     Divider()
                     LanguageRow(
                         current = sttLanguage,
-                        forcesWhisper = !DictationLanguage.isEnglish(sttLanguage) &&
-                            OnDeviceStt.isParakeet(OnDeviceStt.resolveModel(sttModel)),
+                        forcesWhisper = OnDeviceStt.isParakeet(sttModel) &&
+                            !OnDeviceStt.supportsLanguage(sttModel, sttLanguage),
                     ) { pickingLanguage = true }
                     Divider()
                     ToggleRow("Auto-stop on pause", "End recording when you stop talking", vadAutoStop) { vadAutoStop = it; persist() }
@@ -411,7 +425,7 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
                         "Show the text and wait, instead of typing it straight into the field",
                         reviewBeforeInsert,
                     ) { reviewBeforeInsert = it; persist() }
-                    if (sttProvider == "local" && OnDeviceStt.isParakeet(OnDeviceStt.resolveModel(sttModel, sttLanguage))) {
+                    if (sttModel == ParakeetModelManager.MODEL_ID && DictationLanguage.isEnglish(sttLanguage)) {
                         Divider()
                         ToggleRow(
                             "Vocab-biased decoding (experimental)",
@@ -609,7 +623,7 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
 /* --------------------------- dictation language --------------------------- */
 
 /**
- * The dictation language row. [forcesWhisper] is true when the user has picked a non-English
+ * The dictation language row. [forcesWhisper] is true when the selected model does not support
  * language while Parakeet is their selected model: we route them to Whisper automatically, and
  * saying so is better than letting them wonder why the engine changed under them.
  */
@@ -622,7 +636,7 @@ private fun LanguageRow(current: String, forcesWhisper: Boolean, onClick: () -> 
         Column(Modifier.weight(1f)) {
             Text("Dictation language", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
             Text(
-                if (forcesWhisper) "Uses Whisper — Parakeet is English-only"
+                if (forcesWhisper) "Uses Whisper — selected Parakeet does not support this language"
                 else "The language you speak while dictating",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -733,6 +747,12 @@ private fun sttModelOptions(recommendedId: String): List<SttModelOption> = build
             OnDeviceStt.isParakeet(recommendedId),
         ),
     )
+    add(SttModelOption(
+        ParakeetV3ModelManager.MODEL_ID,
+        "Parakeet v3 · multilingual (preview)",
+        "${ParakeetV3ModelManager.SIZE_LABEL} · 25 European languages, auto language detection",
+        recommendedId == ParakeetV3ModelManager.MODEL_ID,
+    ))
     WhisperModelManager.MODELS.forEach {
         add(SttModelOption(it.id, it.label, it.sizeLabel, it.id == recommendedId))
     }
