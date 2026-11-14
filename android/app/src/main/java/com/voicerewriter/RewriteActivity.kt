@@ -398,8 +398,7 @@ class RewriteActivity : ComponentActivity() {
     }
 
     private fun streamFor(s: Settings, prompt: String, text: String): kotlinx.coroutines.flow.Flow<String> =
-        if (s.provider == "local") LocalLlmEngine.streamWithPrompt(applicationContext, s, prompt, text)
-        else RewriteEngine.streamWithPrompt(s, prompt, text)
+        LocalLlmEngine.streamWithPrompt(applicationContext, LocalOnlyPolicy.enforce(s), prompt, text)
 
     /** Map a raw exception to plain, actionable copy for the sheet. */
     private fun friendlyError(e: Throwable): String {
@@ -408,17 +407,17 @@ class RewriteActivity : ComponentActivity() {
         return when {
             e is java.net.UnknownHostException || e is java.net.ConnectException ||
                 "unable to resolve host" in low || "failed to connect" in low ->
-                "No connection. Check your network, or switch to on-device in Settings."
+                "Model download failed. Connect to the internet to download models."
             e is java.net.SocketTimeoutException || "timeout" in low || "timed out" in low ->
                 "That took too long. Try again."
-            "401" in low || "403" in low || "unauthor" in low || "api key" in low || "invalid key" in low ->
-                "Check your API key in Settings."
+            "401" in low || "403" in low ->
+                "Model download unavailable. Check the model source."
             else -> msg
         }
     }
 
     private fun llmReady(s: Settings): Boolean =
-        if (s.provider == "local") LlmModelManager.isReady(this, s.model) else s.isConfigured
+        LlmModelManager.isReady(this, LocalOnlyPolicy.enforce(s).model)
 
     /**
      * A downloaded on-device engine that *isn't* the one that just failed, as `id to label`.
@@ -609,11 +608,9 @@ class RewriteActivity : ComponentActivity() {
                     // Personal vocab biases decoding (B3) on both backends, then snaps
                     // remaining near-misses afterward (B2).
                     val bias = if (vocab.isEmpty()) null else VocabCorrector.biasPrompt(vocab)
-                    val raw = if (s.sttProvider == "local") {
-                        OnDeviceStt.transcribe(this@RewriteActivity, s, WavIo.toFloats(samples), bias)
-                    } else {
-                        SttEngine.transcribe(s, PendingAudio.wavFile(this@RewriteActivity, recId!!), bias)
-                    }
+                    val raw = OnDeviceStt.transcribe(
+                        this@RewriteActivity, LocalOnlyPolicy.enforce(s), WavIo.toFloats(samples), bias
+                    )
                     // On a transliterating model, protect the Hindi function words by name.
                     // Learned entries like "mean", "by", "home" and "honey" otherwise swallow
                     // main, mein, bhai, hoon and thik. Names still get corrected at any length,
@@ -664,13 +661,8 @@ class RewriteActivity : ComponentActivity() {
                 appPackage = host, appLabel = appLabel(host),
                 sttProvider = s.sttProvider, sttModel = s.sttModel,
             )
-            if (rec == null && s.sttProvider != "local") {
-                // The cloud upload needs a file and we just failed to write one — say so
-                // rather than proceeding as if a recoverable copy existed.
-                error = "Couldn't save the recording. Free up some storage and try again."
-                stage = Stage.ERROR
-                return
-            }
+            // A failed write-ahead save must not discard the usable audio already in RAM.
+            // PendingAudio provides optional crash recovery for local transcription.
             runTranscription(s, samples, rec?.id)
         }
 
@@ -1061,7 +1053,7 @@ class RewriteActivity : ComponentActivity() {
                     if (actionId == "prompt_engineer") it.copy(antiAI = false) else it
                 }
                 if (!llmReady(settings)) {
-                    error = if (settings.provider == "local")
+                    error = if (LocalOnlyPolicy.enforce(settings).provider == "local")
                         "On-device model not downloaded. Open OpenWispr → Save settings."
                     else "No API key set. Open OpenWispr to configure it."
                     streaming = false
