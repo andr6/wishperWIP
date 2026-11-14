@@ -59,6 +59,10 @@ outlined in [NATIVE_LIFECYCLE.md](NATIVE_LIFECYCLE.md).
 A future Qwen3-ASR 0.6B engine is subject to the measurement-based decision
 in [QWEN3_ASR_GATE.md](QWEN3_ASR_GATE.md); no new inference engine is enabled.
 
+Settings now shows whether the effective speech model is installed for your selected
+language and whether optional polish is available; see
+[OFFLINE_READINESS.md](OFFLINE_READINESS.md).
+
 ## Build
 
 For the fork's P0.0 baseline, Android CI validation and on-device smoke tests,
