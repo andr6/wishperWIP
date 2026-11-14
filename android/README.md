@@ -69,6 +69,10 @@ Settings; see [BUBBLE_CONTROLS.md](BUBBLE_CONTROLS.md) for behavior and testing.
 The floating bubble and dictation sheet distinguish local transcription from
 optional polish; see [DICTATION_FEEDBACK.md](DICTATION_FEEDBACK.md).
 
+Cross-app insertion now checks the original recording host and protects Unicode
+cursor offsets; see [INSERTION_SAFETY.md](INSERTION_SAFETY.md) for safety and
+regression coverage.
+
 ## Build
 
 For the fork's P0.0 baseline, Android CI validation and on-device smoke tests,
