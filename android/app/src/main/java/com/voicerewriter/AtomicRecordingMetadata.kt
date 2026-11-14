@@ -22,14 +22,15 @@ internal object AtomicRecordingMetadata {
         if (!parent.isDirectory && !parent.mkdirs()) return false
         var temporary: File? = null
         return try {
-            temporary = File.createTempFile(target.name + ".", ".tmp", parent)
-            FileOutputStream(temporary).use { output ->
+            val tmp = File.createTempFile(target.name + ".", ".tmp", parent)
+            temporary = tmp
+            FileOutputStream(tmp).use { output ->
                 writer(output)
                 output.fd.sync()
             }
             // Linux/Android rename within one directory replaces a file atomically.
             // If the rename fails, the prior JSON remains untouched.
-            if (!temporary.renameTo(target)) throw IOException("Atomic metadata rename failed")
+            if (!tmp.renameTo(target)) throw IOException("Atomic metadata rename failed")
             true
         } catch (_: Exception) {
             false
