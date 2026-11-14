@@ -53,28 +53,13 @@ object RewriteEngine {
         return s
     }
 
-    private fun endpointFor(settings: Settings): String {
-        if (settings.provider == "custom") {
-            val url = settings.customEndpoint.trim()
-            if (url.isEmpty()) throw IllegalStateException("Custom endpoint not configured. Open settings.")
-            return url
-        }
-        val p = Defaults.PROVIDERS[settings.provider]
-            ?: throw IllegalStateException("Unknown provider: ${settings.provider}")
-        return p.endpoint
-    }
-
     private fun promptFor(actionId: String): String =
         Defaults.DEFAULT_PROMPTS[actionId]
             ?: throw IllegalStateException("Unknown action: $actionId")
 
     // ---------------- streaming call ----------------
 
-    /**
-     * Emits content deltas for the given action over the gateway. Cancelling the
-     * collecting coroutine cancels the underlying HTTP call (free abort, like the
-     * extension's port.onDisconnect).
-     */
+    /** Obsolete remote streaming API; fails closed in the local-only build. */
     fun stream(settings: Settings, actionId: String, text: String): Flow<String> =
         streamWithPrompt(settings, promptFor(actionId), text)
 
