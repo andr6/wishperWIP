@@ -64,6 +64,8 @@ data class Settings(
      */
     val reviewBeforeInsert: Boolean = false,
     val bubbleOnlyOnFields: Boolean = true, // show the bubble only while a text field is focused (needs accessibility)
+    val bubbleHoldEnabled: Boolean = BubbleGestureConfig.DEFAULT_HOLD_ENABLED,
+    val bubbleHoldDelayMs: Int = BubbleGestureConfig.DEFAULT_HOLD_DELAY_MS,
     val hasCompletedOnboarding: Boolean = false, // first-run onboarding shown once; re-launchable from Settings
     // Experimental: Parakeet vocab-bias via sherpa hotwords + modified_beam_search. Off by
     // default — that decode path has an open upstream bug (k2-fsa/sherpa-onnx#3267) that
@@ -121,6 +123,8 @@ class SettingsRepository(private val context: Context) {
         val VAD_AUTO_STOP = booleanPreferencesKey("vadAutoStop")
         val REVIEW_BEFORE_INSERT = booleanPreferencesKey("reviewBeforeInsert")
         val BUBBLE_ONLY_ON_FIELDS = booleanPreferencesKey("bubbleOnlyOnFields")
+        val BUBBLE_HOLD_ENABLED = booleanPreferencesKey("bubbleHoldEnabled")
+        val BUBBLE_HOLD_DELAY_MS = androidx.datastore.preferences.core.intPreferencesKey("bubbleHoldDelayMs")
         val HAS_COMPLETED_ONBOARDING = booleanPreferencesKey("hasCompletedOnboarding")
         val PARAKEET_HOTWORDS_EXPERIMENTAL = booleanPreferencesKey("parakeetHotwordsExperimental")
     }
@@ -156,6 +160,10 @@ class SettingsRepository(private val context: Context) {
             vadAutoStop = p[Keys.VAD_AUTO_STOP] ?: defaults.vadAutoStop,
             reviewBeforeInsert = p[Keys.REVIEW_BEFORE_INSERT] ?: defaults.reviewBeforeInsert,
             bubbleOnlyOnFields = p[Keys.BUBBLE_ONLY_ON_FIELDS] ?: defaults.bubbleOnlyOnFields,
+            bubbleHoldEnabled = p[Keys.BUBBLE_HOLD_ENABLED] ?: defaults.bubbleHoldEnabled,
+            bubbleHoldDelayMs = BubbleGestureConfig.normalizeDelay(
+                p[Keys.BUBBLE_HOLD_DELAY_MS] ?: defaults.bubbleHoldDelayMs
+            ),
             hasCompletedOnboarding = p[Keys.HAS_COMPLETED_ONBOARDING] ?: defaults.hasCompletedOnboarding,
             parakeetHotwordsExperimental = p[Keys.PARAKEET_HOTWORDS_EXPERIMENTAL] ?: defaults.parakeetHotwordsExperimental,
         ))
@@ -186,6 +194,8 @@ class SettingsRepository(private val context: Context) {
             p[Keys.VAD_AUTO_STOP] = s.vadAutoStop
             p[Keys.REVIEW_BEFORE_INSERT] = s.reviewBeforeInsert
             p[Keys.BUBBLE_ONLY_ON_FIELDS] = s.bubbleOnlyOnFields
+            p[Keys.BUBBLE_HOLD_ENABLED] = s.bubbleHoldEnabled
+            p[Keys.BUBBLE_HOLD_DELAY_MS] = BubbleGestureConfig.normalizeDelay(s.bubbleHoldDelayMs)
             p[Keys.HAS_COMPLETED_ONBOARDING] = s.hasCompletedOnboarding
             p[Keys.PARAKEET_HOTWORDS_EXPERIMENTAL] = s.parakeetHotwordsExperimental
         }

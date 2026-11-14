@@ -135,6 +135,8 @@ class BubbleService : Service() {
     // Field-gated visibility: when on (and accessibility is available), the bubble
     // only appears while a text field is focused — like a contextual keyboard key.
     @Volatile private var gateSetting = true
+    @Volatile private var holdToTalkEnabled = BubbleGestureConfig.DEFAULT_HOLD_ENABLED
+    @Volatile private var holdToTalkDelayMs = BubbleGestureConfig.DEFAULT_HOLD_DELAY_MS
     private var fieldFocused = false
     private var recording = false
 
@@ -147,9 +149,14 @@ class BubbleService : Service() {
         } catch (e: Exception) {
             android.util.Log.e("BubbleService", "startForeground failed", e)
         }
-        gateSetting = try {
-            runBlocking { SettingsRepository(applicationContext).get().bubbleOnlyOnFields }
-        } catch (_: Exception) { true }
+        try {
+            val settings = runBlocking { SettingsRepository(applicationContext).get() }
+            gateSetting = settings.bubbleOnlyOnFields
+            holdToTalkEnabled = settings.bubbleHoldEnabled
+            holdToTalkDelayMs = BubbleGestureConfig.normalizeDelay(settings.bubbleHoldDelayMs)
+        } catch (_: Exception) {
+            gateSetting = true
+        }
         addBubble()
         isRunning = true
         instance = this
@@ -315,7 +322,9 @@ class BubbleService : Service() {
         // bubble out of its dock. The *look* of that frame — the lift and the coral outline —
         // is what [BubbleView.State.LIFTED] shows, just triggered by the drag instead.
         val longPress = Runnable {
-            if (!moved && recordingStopper == null) {
+            if (BubbleGestureConfig.canStartHold(
+                holdToTalkEnabled, moved, recordingStopper != null
+            )) {
                 longFired = true
                 holdingToTalk = true
                 hapticHeld() // a heavier beat than a tap: you are holding, and release will send
@@ -343,7 +352,7 @@ class BubbleService : Service() {
                     startY = params.y
                     moved = false
                     longFired = false
-                    mainHandler.postDelayed(longPress, 450)
+                    if (holdToTalkEnabled) mainHandler.postDelayed(longPress, holdToTalkDelayMs.toLong())
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
@@ -738,9 +747,12 @@ class BubbleService : Service() {
 
     /** Re-read the gating preference and apply (e.g. after accessibility connects). */
     fun refreshGating() {
-        gateSetting = try {
-            runBlocking { SettingsRepository(applicationContext).get().bubbleOnlyOnFields }
-        } catch (_: Exception) { gateSetting }
+        try {
+            val settings = runBlocking { SettingsRepository(applicationContext).get() }
+            gateSetting = settings.bubbleOnlyOnFields
+            holdToTalkEnabled = settings.bubbleHoldEnabled
+            holdToTalkDelayMs = BubbleGestureConfig.normalizeDelay(settings.bubbleHoldDelayMs)
+        } catch (_: Exception) { /* Keep the last known settings when persistence is unavailable. */ }
         mainHandler.post { applyGating(animate = true) }
     }
 
