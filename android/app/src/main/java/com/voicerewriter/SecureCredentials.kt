@@ -69,6 +69,14 @@ internal class SecureCredentials(context: Context) {
         return decode(field, ciphertext)
     }
 
+    /** Retire obsolete cloud credentials without depending on a decryptable Keystore key. */
+    fun clear() {
+        if (!prefs.contains(LLM) && !prefs.contains(STT)) return
+        check(prefs.edit().remove(LLM).remove(STT).commit()) {
+            "Failed to remove obsolete cloud credentials"
+        }
+    }
+
     fun llmKey(): String = read(LLM)
     fun sttKey(): String = read(STT)
 
