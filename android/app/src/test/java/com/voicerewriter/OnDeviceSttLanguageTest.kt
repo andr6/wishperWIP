@@ -96,4 +96,9 @@ class OnDeviceSttLanguageTest {
         assertEquals("small", OnDeviceStt.resolveModel("small", "auto"))
     }
 
+    @Test fun `transliterating Whisper fine tune cannot masquerade as auto language`() {
+        val specific = WhisperModelManager.MODELS.first { it.isTransliterating }.id
+        assertEquals(WhisperModelManager.DEFAULT_MODEL, OnDeviceStt.resolveModel(specific, "auto"))
+    }
+
 }
