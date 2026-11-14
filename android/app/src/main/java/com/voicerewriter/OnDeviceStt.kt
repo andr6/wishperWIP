@@ -15,7 +15,8 @@ object OnDeviceStt {
     /** V2 only understands English; V3 automatically identifies its 25 languages. */
     fun supportsLanguage(modelId: String, language: String): Boolean = when (modelId) {
         ParakeetModelManager.MODEL_ID -> DictationLanguage.isEnglish(language)
-        ParakeetV3ModelManager.MODEL_ID -> ParakeetV3ModelManager.supports(language)
+        ParakeetV3ModelManager.MODEL_ID -> DictationLanguage.isAutomatic(language) ||
+            ParakeetV3ModelManager.supports(language)
         else -> true
     }
 
@@ -24,11 +25,10 @@ object OnDeviceStt {
      * unrecognized value (e.g. a fresh install, where the field is empty) falls back to the
      * local provider's default — Parakeet — so the recommended engine is used by default.
      *
-     * [language] is the dictation language. Parakeet v2 is English-only: it has
-     * no Hindi; v3 supports 25 European languages. Rather than let a user pick Hindi
-     * and silently get English-shaped output from an unsupported transducer, an unsupported
-     * language routes to Whisper, whose ggml builds are multilingual. This is the one place
-     * that decision lives, so every call site (dictation, warm-up, readiness) agrees.
+     * An explicit language must be supported by the selected Parakeet version.
+     * Automatic detection is supported by Parakeet v3 and multilingual Whisper;
+     * Parakeet v2 is English-only and routes automatic input to Whisper instead.
+     * The same routing applies to warm-up, readiness checks, and transcription.
      *
      * Whisper's largest downloaded size is preferred, because Whisper's non-English accuracy
      * falls off much faster than its English does — `tiny` in Hindi is not worth shipping if
