@@ -240,7 +240,9 @@ class RewriteActivity : ComponentActivity() {
         // No toast on the clipboard fallback: users who skipped Accessibility chose the
         // clipboard deliberately, so being told about it after every single dictation (and
         // nudged to grant the permission again) is nagging, not information.
-        val enqueued = OpenWisprAccessibilityService.enqueueInsert(result)
+        // The host was captured before the microphone started. Never paste
+        // into a different application just because it took focus while ASR ran.
+        val enqueued = OpenWisprAccessibilityService.enqueueInsert(result, dictationHostPkg)
         if (!enqueued) setClipboard(result)
         LastDictation.set(this, result)
         // Delivery is confirmed — inserted, or on the clipboard where the user can reach it —
