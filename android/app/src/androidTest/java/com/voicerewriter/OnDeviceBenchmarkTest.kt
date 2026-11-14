@@ -6,7 +6,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -15,7 +14,7 @@ import java.io.File
 /**
  * Runs real whisper.cpp / sherpa-onnx inference on the device, never cloud APIs.
  *
- * Import a private fixture directory into targetContext.filesDir/benchmark/:
+ * Import private fixtures into targetContext.getExternalFilesDir(null)/benchmark/:
  *   fixtures.tsv  -> id<TAB>language<TAB>verified reference transcript
  *   <id>.wav      -> mono 16-kHz PCM16, fixed 44-byte WAV header (WavIo format)
  *
@@ -35,7 +34,7 @@ class OnDeviceBenchmarkTest {
         val repeats = (args.getString("repeats", "2")!!.toInt()).also {
             require(it in 1..10) { "repeats must be 1..10" }
         }
-        val root = File(context.filesDir, "benchmark")
+        val root = File(requireNotNull(context.getExternalFilesDir(null)), "benchmark")
         val manifest = File(root, "fixtures.tsv")
         assertTrue("Missing benchmark fixtures at ${manifest.absolutePath}", manifest.isFile)
         val fixtures = manifest.readLines().map { it.trimEnd() }
@@ -50,7 +49,7 @@ class OnDeviceBenchmarkTest {
                     "Unsupported evaluation language: $language"
                 }
                 val audio = File(root, "$id.wav")
-                require(audio.isFile) { "Missing audio for $id" }
+                BenchmarkWavValidator.validate(audio)
                 Fixture(id, language, reference, audio)
             }
         require(fixtures.isNotEmpty()) { "No evaluation fixtures provided" }
