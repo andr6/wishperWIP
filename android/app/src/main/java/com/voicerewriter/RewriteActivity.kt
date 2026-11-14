@@ -845,7 +845,10 @@ class RewriteActivity : ComponentActivity() {
         // gap with nothing on screen at all.
         LaunchedEffect(stage) {
             if (chromeless && (stage == Stage.TRANSCRIBING || stage == Stage.CORRECTING)) {
-                BubbleService.instance?.showWorking()
+                BubbleService.instance?.showWorking(
+                    if (stage == Stage.CORRECTING) DictationWorkPhase.POLISHING
+                    else DictationWorkPhase.TRANSCRIBING
+                )
             }
         }
 
@@ -912,10 +915,18 @@ class RewriteActivity : ComponentActivity() {
                     }
                 }
 
-                Stage.TRANSCRIBING -> TranscribingRing("Transcribing")
+                Stage.TRANSCRIBING -> {
+                    TranscribingRing("Transcribing")
+                    Text(DictationWorkPhase.TRANSCRIBING.sheetDescription,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
 
                 Stage.CORRECTING -> {
                     TranscribingRing("Polishing")
+                    Text(DictationWorkPhase.POLISHING.sheetDescription,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (output.isNotBlank()) {
                         OutputText(RewriteEngine.cleanOutput(output))
                     }
