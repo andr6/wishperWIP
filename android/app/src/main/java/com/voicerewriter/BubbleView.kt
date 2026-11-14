@@ -159,6 +159,10 @@ class BubbleView(context: Context) : View(context) {
     private val mark: Drawable? = ContextCompat.getDrawable(context, R.drawable.ic_aperture)
     private val clipboard: Drawable? = ContextCompat.getDrawable(context, R.drawable.ic_clipboard)
 
+    /** Which local task is in progress (no transcript text is stored in the bubble). */
+    var processingPhase: DictationWorkPhase = DictationWorkPhase.TRANSCRIBING
+        set(value) { if (field != value) { field = value; invalidate() } }
+
     /** Current state. Setting it restarts the motion clock; see the class docs. */
     var state: State = State.IDLE
         set(value) {
@@ -405,6 +409,16 @@ class BubbleView(context: Context) : View(context) {
             canvas.drawCircle(cx + (i - 1) * step, cy + dy, dotR, accentPaint)
         }
         accentPaint.alpha = 255
+
+        // Compact status below the animated dots. Keep the bubble circular and
+        // do not animate a fictitious percentage while inference is running.
+        val text = processingPhase.bubbleLabel
+        labelPaint.color = if (dark) MARK_DK else MARK
+        val originalTextSize = labelPaint.textSize
+        labelPaint.textSize = dp(7.5f)
+        canvas.drawText(text, cx - labelPaint.measureText(text) / 2f,
+            cy + dp(15f), labelPaint)
+        labelPaint.textSize = originalTextSize
     }
 
     /** Inserted. Pops once, draws the check in, and [BubbleService] returns it to idle. */
