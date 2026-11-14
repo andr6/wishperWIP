@@ -118,16 +118,12 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
     // LLM (rewrite / polish model)
     var provider by remember { mutableStateOf(Defaults.DEFAULT_PROVIDER) }
     var model by remember { mutableStateOf(Defaults.DEFAULT_MODEL) }
-    var customEndpoint by remember { mutableStateOf("") }
-    var apiKey by remember { mutableStateOf("") }
     var voice by remember { mutableStateOf("") }
     var antiAI by remember { mutableStateOf(true) }
     var temperature by remember { mutableFloatStateOf(Defaults.DEFAULT_TEMPERATURE.toFloat()) }
 
     // STT
     var sttProvider by remember { mutableStateOf(Defaults.DEFAULT_STT_PROVIDER) }
-    var sttEndpoint by remember { mutableStateOf("") }
-    var sttKey by remember { mutableStateOf("") }
     var sttModel by remember { mutableStateOf("") }
     var sttLanguage by remember { mutableStateOf(DictationLanguage.DEFAULT) }
     var defaultMode by remember { mutableStateOf(Defaults.MODE_DICTATE) }
@@ -167,9 +163,9 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
 
     LaunchedEffect(Unit) {
         val s = repo.get()
-        provider = "local"; model = s.model; customEndpoint = ""; apiKey = ""
+        provider = "local"; model = s.model
         voice = s.voice; antiAI = s.antiAI; temperature = s.temperature.toFloat()
-        sttProvider = "local"; sttEndpoint = ""; sttKey = ""; sttModel = s.sttModel
+        sttProvider = "local"; sttModel = s.sttModel
         sttLanguage = DictationLanguage.normalize(s.sttLanguage)
         defaultMode = s.defaultMode
         deterministicCleanup = s.deterministicCleanup; polishLevel = s.polishLevel
@@ -740,10 +736,6 @@ private fun sttModelOptions(recommendedId: String): List<SttModelOption> = build
     WhisperModelManager.MODELS.forEach {
         add(SttModelOption(it.id, it.label, it.sizeLabel, it.id == recommendedId))
     }
-}
-
-private fun keyPlaceholder(provider: String) = when (provider) {
-    "groq" -> "gsk_..."; "openai" -> "sk-..."; else -> "key or endpoint"
 }
 
 /* ------------------------ reusable pieces ------------------------ */
