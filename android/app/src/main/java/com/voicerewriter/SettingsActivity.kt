@@ -637,6 +637,7 @@ private fun LanguageRow(current: String, forcesWhisper: Boolean, onClick: () -> 
             Text("Dictation language", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
             Text(
                 if (forcesWhisper) "Uses Whisper — selected Parakeet does not support this language"
+                else if (DictationLanguage.isAutomatic(current)) "Detect language on-device for each recording"
                 else "The language you speak while dictating",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -652,7 +653,7 @@ private fun LanguageRow(current: String, forcesWhisper: Boolean, onClick: () -> 
 }
 
 /**
- * Picker over whisper.cpp's own language table. Long (100 entries), so it scrolls in a
+ * Picker over auto detection and whisper.cpp's language table; long, so it scrolls in a
  * LazyColumn rather than pretending to be a short menu. English sits first because it is the
  * default; the rest are alphabetical.
  */
@@ -664,9 +665,10 @@ private fun LanguageDialog(current: String, onPick: (String) -> Unit, onDismiss:
         text = {
             Column {
                 Text(
-                    "Speech is transcribed in this language, never translated. Cleanup rules " +
-                        "(capitalization, filler words, number formatting) are English-only and " +
-                        "are skipped for other languages.",
+                    "Automatic detects the spoken language with Parakeet v3 or multilingual " +
+                        "Whisper; Parakeet v2 switches to Whisper. Detection is per recording " +
+                        "and mixed-language sentences may still need correction. " +
+                        "English-only cleanup runs only when English is explicitly selected.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
