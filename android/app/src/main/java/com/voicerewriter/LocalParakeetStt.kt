@@ -126,25 +126,32 @@ object LocalParakeetStt {
         val key = "$modelId:" + (hotwords?.let { "hotwords:" + terms.joinToString(",") } ?: "greedy")
         val seconds = samples.size / AudioRecorder.SAMPLE_RATE.toFloat()
         val t0 = System.nanoTime()
-        val rec = loadLock.withLock {
-            val cached = recognizer
-            if (cached != null && recognizerKey == key) {
-                cached
+        // Hold the mutex across decoding as well as recognizer construction.
+        // Otherwise a simultaneous v2/v3 switch could dispose the native model
+        // while a stream is using it. Release the prior ~650 MB model before
+        // loading the new one to avoid retaining both in native memory.
+        val (text, tLoaded) = loadLock.withLock {
+            val rec = if (recognizer != null && recognizerKey == key) {
+                recognizer!!
             } else {
+                recognizer?.release()
+                recognizer = null
+                recognizerKey = null
                 withContext(Dispatchers.IO) { buildRecognizer(context, modelId, hotwords) }
                     .also { recognizer = it; recognizerKey = key }
             }
-        }
-        val tLoaded = System.nanoTime()
-        val text = withContext(Dispatchers.Default) {
-            val stream = rec.createStream()
-            try {
-                stream.acceptWaveform(samples, 16_000)
-                rec.decode(stream)
-                rec.getResult(stream).text
-            } finally {
-                stream.release()
+            val loadedAt = System.nanoTime()
+            val decoded = withContext(Dispatchers.Default) {
+                val stream = rec.createStream()
+                try {
+                    stream.acceptWaveform(samples, 16_000)
+                    rec.decode(stream)
+                    rec.getResult(stream).text
+                } finally {
+                    stream.release()
+                }
             }
+            decoded to loadedAt
         }
         val tDone = System.nanoTime()
         Log.i(
@@ -166,6 +173,9 @@ object LocalParakeetStt {
             val key = "$modelId:greedy"
             if (recognizer != null && recognizerKey == key) return
             val t0 = System.nanoTime()
+            recognizer?.release()
+            recognizer = null
+            recognizerKey = null
             recognizer = withContext(Dispatchers.IO) { buildRecognizer(context, modelId, hotwords = null) }
             recognizerKey = key
             Log.i("LocalParakeetStt", "warm load=${(System.nanoTime() - t0) / 1_000_000}ms")
