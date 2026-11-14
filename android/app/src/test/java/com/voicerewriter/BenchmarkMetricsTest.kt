@@ -12,7 +12,7 @@ class BenchmarkMetricsTest {
 
     @Test fun accentsRemainSignificant() {
         assertEquals(0.5, BenchmarkMetrics.wer("Eu pôr", "eu por"), 0.00001)
-        assertEquals(2.0 / 6, BenchmarkMetrics.cer("sí está", "si esta"), 0.00001)
+        assertEquals(2.0 / 7, BenchmarkMetrics.cer("sí está", "si esta"), 0.00001)
     }
 
     @Test fun insertionsDeletionsAndSubstitutionsUseEditDistance() {
