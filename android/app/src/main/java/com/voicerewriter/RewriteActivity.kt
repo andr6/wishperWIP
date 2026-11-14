@@ -423,13 +423,13 @@ class RewriteActivity : ComponentActivity() {
      * A downloaded on-device engine that *isn't* the one that just failed, as `id to label`.
      * Parakeet and Whisper fail on different things, so re-running the saved audio on the
      * other one genuinely rescues transcripts — and on-device it costs nothing but a few
-     * seconds. Null when the user only has one engine, or is on a cloud provider.
+     * seconds. Null when the user only has one local engine.
      */
     /**
      * True when the engine this dictation actually used emits a transliterated script rather
      * than prose in the dictation language — today, the Hinglish fine-tune. Resolved through
      * [OnDeviceStt.resolveModel] rather than read off `settings.sttModel`, because that is what
-     * decides which model ran. Cloud providers are never transliterating.
+     * decides which model ran.
      */
     private fun isTransliteratingModel(s: Settings): Boolean {
         if (s.sttProvider != "local") return false
@@ -595,7 +595,7 @@ class RewriteActivity : ComponentActivity() {
         /**
          * Transcribe a take and run it through the cleanup pipeline. Shared by the first
          * attempt and every retry — a retry must not be a second, subtly different code path.
-         * [recId] names the durable copy; the cloud backend uploads that exact file.
+         * [recId] names the durable copy used for crash recovery and retries.
          */
         fun runTranscription(s: Settings, samples: ShortArray, recId: String?) {
             error = null; notice = null; output = ""; finalText = ""
@@ -983,7 +983,7 @@ class RewriteActivity : ComponentActivity() {
                     // Re-running the *same* on-device engine on the *same* samples is
                     // deterministic — it fails identically. So a retry prefers the other
                     // downloaded engine, which is the only thing that can actually rescue the
-                    // take. Falls back to the current engine (cloud, or only one model), where
+                    // take. Falls back to the current local engine when no alternate is available, where
                     // a retry does mean something because the failure was transient.
                     val alt = if (saved != null) settings?.let { altOnDeviceEngine(it) } else null
                     if (saved != null) {
