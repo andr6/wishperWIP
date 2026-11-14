@@ -5,7 +5,7 @@ package com.voicerewriter
  * These labels describe real actions, never fabricated progress percentages.
  * No dictated words, filenames, prompts or model names are exposed in overlays.
  */
-internal enum class DictationWorkPhase(
+enum class DictationWorkPhase(
     val bubbleLabel: String,
     val accessibilityDescription: String,
     val sheetDescription: String,
