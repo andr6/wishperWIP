@@ -68,9 +68,13 @@ class OpenWisprAccessibilityService : AccessibilityService() {
          * is running (so the caller knows auto-insert will be attempted).
          * Call from the main thread.
          */
-        fun enqueueInsert(text: String, originalHostPackage: String? = null): Boolean {
+        fun enqueueInsert(
+            text: String,
+            originalHostPackage: String? = null,
+            recordingId: String? = null,
+        ): Boolean {
             val svc = instance ?: return false
-            svc.startInsert(text, originalHostPackage)
+            svc.startInsert(text, originalHostPackage, recordingId)
             return true
         }
 
@@ -82,10 +86,10 @@ class OpenWisprAccessibilityService : AccessibilityService() {
     }
 
     private val main = Handler(Looper.getMainLooper())
-    @Volatile private var pendingText: String? = null
-    // Bound to the host active when recording started, not a different app
-    // that takes focus while local transcription or polishing is running.
-    private var pendingHost: String? = null
+    // Queued requests are separate: a second dictation never overwrites the
+    // first while Android waits for its original editor to regain focus.
+    private val deliveryQueue = InsertionDeliveryQueue()
+    private var insertionAttempts = mutableListOf<Runnable>()
     private val retryDelays = longArrayOf(250, 500, 900, 1400, 2000)
 
     override fun onServiceConnected() {
@@ -177,7 +181,7 @@ class OpenWisprAccessibilityService : AccessibilityService() {
                 main.postDelayed(fieldCheck, 120)
             }
         }
-        if (pendingText == null) return
+        if (deliveryQueue.current() == null) return
         when (event.eventType) {
             AccessibilityEvent.TYPE_VIEW_FOCUSED,
             AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED,
@@ -194,6 +198,10 @@ class OpenWisprAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         super.onDestroy()
         main.removeCallbacks(fieldCheck)
+        clearInsertionAttempts()
+        // Service death is not a successful delivery. Release all remaining
+        // recordings so the saved audio is offered again from Home.
+        deliveryQueue.abandonAll().forEach { it.recordingId?.let(PendingAudio::release) }
         if (instance === this) instance = null
         // Service gone — focus detection is impossible, so let the bubble show always.
         BubbleService.instance?.refreshGating()
@@ -201,72 +209,88 @@ class OpenWisprAccessibilityService : AccessibilityService() {
 
     // ---------------- insertion ----------------
 
-    private fun startInsert(text: String, originalHostPackage: String?) {
-        // Note: we deliberately do NOT stage the clipboard here. The common insert path
-        // writes the text straight into the field (ACTION_SET_TEXT) without touching the
-        // clipboard, so a successful dictation no longer clobbers what the user had copied.
-        // The clipboard is only used as a fallback (see attemptInsert / the give-up branch).
-        pendingText = text
-        pendingHost = originalHostPackage?.takeIf { it.isNotBlank() }
-        main.removeCallbacksAndMessages(null)
-        // Backstop retries in case the focus event doesn't arrive.
-        for (delay in retryDelays) main.postDelayed({ attemptInsert() }, delay)
-        // Give up after the last retry: no field ever focused — fall back to a clipboard copy.
-        main.postDelayed({
-            val t = pendingText
-            if (t != null) {
-                pendingText = null
-                pendingHost = null
-                setClipboard(t)
-                // Say what happened. Reaching here means accessibility is running and we still
-                // couldn't find an editable node to write into — which is the normal outcome in
-                // apps that don't expose their composer (#78), not something the user did.
-                //
-                // Android 13+ raises its own "Copied" confirmation for the clipboard write, but
-                // that reports a success and names no failure, so the dictation reads as having
-                // worked while the field stays empty. This is the only place that says otherwise.
-                //
-                // Deliberately not the same as the no-accessibility path in acceptVoice, which
-                // stays silent: a user who declined the permission gets the clipboard by choice
-                // and doesn't need telling after every dictation.
-                //
-                // Said on the bubble rather than in a toast of ours: this service runs in the
-                // background, and Android drops background toasts before they reach the screen.
-                BubbleService.instance?.showClipboardFallback()
-            }
-        }, retryDelays.last() + 300)
+    private fun startInsert(text: String, originalHostPackage: String?, recordingId: String?) {
+        // Enqueue does not mean delivered. Each request retains its original
+        // destination and durable audio receipt; do not clobber an older take.
+        val wasIdle = deliveryQueue.current() == null
+        deliveryQueue.enqueue(text, originalHostPackage, recordingId)
+        if (wasIdle) scheduleCurrentDelivery()
     }
 
-    /** Try once to insert into the host app's focused editable field. */
+    private fun clearInsertionAttempts() {
+        insertionAttempts.forEach(main::removeCallbacks)
+        insertionAttempts.clear()
+    }
+
+    private fun scheduleCurrentDelivery() {
+        clearInsertionAttempts()
+        val request = deliveryQueue.current() ?: return
+        for (delayMs in retryDelays) {
+            val task = Runnable {
+                if (deliveryQueue.current()?.sequence == request.sequence) attemptInsert()
+            }
+            insertionAttempts.add(task)
+            main.postDelayed(task, delayMs)
+        }
+        val fallback = Runnable {
+            if (deliveryQueue.current()?.sequence != request.sequence) return@Runnable
+            // Never record success before Android actually accepts the clipboard
+            // copy. A failed write remains unsettled and retryable.
+            try {
+                setClipboard(request.text)
+            } catch (e: Exception) {
+                Log.e(TAG, "clipboard fallback failed", e)
+                // Keep the durable WAV for retry. Advance to the next item, but
+                // do not acknowledge or settle the failed delivery.
+                abandonCurrentDelivery(request.sequence)
+                return@Runnable
+            }
+            if (acknowledgeDelivery(request.sequence) != null) {
+                BubbleService.instance?.showClipboardFallback()
+            }
+        }
+        insertionAttempts.add(fallback)
+        main.postDelayed(fallback, retryDelays.last() + 300)
+    }
+
+    private fun abandonCurrentDelivery(sequence: Long) {
+        // Remove from the active in-memory queue without marking delivered.
+        val abandoned = deliveryQueue.acknowledge(sequence) ?: return
+        abandoned.recordingId?.let(PendingAudio::release)
+        scheduleCurrentDelivery()
+    }
+
+    private fun acknowledgeDelivery(sequence: Long): InsertionDeliveryQueue.Request? {
+        val delivered = deliveryQueue.acknowledge(sequence) ?: return null
+        delivered.recordingId?.let { id ->
+            val app = applicationContext
+            val text = delivered.text
+            Thread {
+                runCatching { PendingAudio.settle(app, id, text) }
+                    .onFailure { Log.e(TAG, "failed to settle delivered recording", it) }
+            }.start()
+        }
+        scheduleCurrentDelivery()
+        return delivered
+    }
+
+    /** Attempt insertion into the original app for the head of the FIFO queue. */
     private fun attemptInsert() {
-        val text = pendingText ?: return
-        val node = findHostFocusedEditable() ?: return
+        val request = deliveryQueue.current() ?: return
+        val node = findHostFocusedEditable(request.originalHost) ?: return
         var viaPaste = false
         val ok = try {
-            // Prefer a clipboard-free splice at the cursor; fall back to paste only when
-            // we can't determine the cursor (e.g. some WebView fields).
-            insertAtCursor(node, text) || run { viaPaste = true; pasteViaClipboard(node, text) }
+            insertAtCursor(node, request.text) ||
+                run { viaPaste = true; pasteViaClipboard(node, request.text) }
         } catch (e: Exception) {
             Log.e(TAG, "insert action failed", e); false
         } finally {
             @Suppress("DEPRECATION") node.recycle()
         }
-        if (ok) {
-            // Worth distinguishing: the paste path leaves the dictation on the clipboard,
-            // overwriting whatever the user had copied, and on Android 13+ the system shows
-            // its own "Copied" confirmation for it. Both read as success without this.
+        if (ok && acknowledgeDelivery(request.sequence) != null) {
             Log.i(TAG, if (viaPaste) "inserted via clipboard paste (clipboard overwritten)"
-                       else "inserted at cursor (clipboard untouched)")
-            pendingText = null
-            pendingHost = null
-            main.removeCallbacksAndMessages(null)
-            // The haptic tick is the confirmation. A toast on top of text visibly appearing in
-            // the field is telling the user something they can already see.
+                else "inserted at cursor (clipboard untouched)")
             vibrateTick()
-            // The bubble says so too, briefly. Not redundant with the text appearing: the field
-            // may be scrolled, hidden behind the keyboard, or simply not where the user is
-            // looking — and this is the only signal that tells a real insert apart from the
-            // clipboard fallback below, which from the user's side looks identical.
             BubbleService.instance?.showInserted()
         }
     }
@@ -304,12 +328,12 @@ class OpenWisprAccessibilityService : AccessibilityService() {
     }
 
     /** Focused editable node in the active window, only if it's NOT our own app. */
-    private fun findHostFocusedEditable(): AccessibilityNodeInfo? {
+    private fun findHostFocusedEditable(expectedHost: String?): AccessibilityNodeInfo? {
         val root = rootInActiveWindow ?: return null
         val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
         if (focused != null && focused.isEditable &&
             InsertionTargetPolicy.allows(
-                pendingHost, root.packageName, focused.packageName, packageName
+                expectedHost, root.packageName, focused.packageName, packageName
             )
         ) return focused
         @Suppress("DEPRECATION") focused?.recycle()
