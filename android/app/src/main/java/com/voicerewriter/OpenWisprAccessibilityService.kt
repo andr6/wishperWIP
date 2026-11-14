@@ -68,9 +68,9 @@ class OpenWisprAccessibilityService : AccessibilityService() {
          * is running (so the caller knows auto-insert will be attempted).
          * Call from the main thread.
          */
-        fun enqueueInsert(text: String): Boolean {
+        fun enqueueInsert(text: String, originalHostPackage: String? = null): Boolean {
             val svc = instance ?: return false
-            svc.startInsert(text)
+            svc.startInsert(text, originalHostPackage)
             return true
         }
 
@@ -83,6 +83,9 @@ class OpenWisprAccessibilityService : AccessibilityService() {
 
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var pendingText: String? = null
+    // Bound to the host active when recording started, not a different app
+    // that takes focus while local transcription or polishing is running.
+    private var pendingHost: String? = null
     private val retryDelays = longArrayOf(250, 500, 900, 1400, 2000)
 
     override fun onServiceConnected() {
@@ -198,12 +201,13 @@ class OpenWisprAccessibilityService : AccessibilityService() {
 
     // ---------------- insertion ----------------
 
-    private fun startInsert(text: String) {
+    private fun startInsert(text: String, originalHostPackage: String?) {
         // Note: we deliberately do NOT stage the clipboard here. The common insert path
         // writes the text straight into the field (ACTION_SET_TEXT) without touching the
         // clipboard, so a successful dictation no longer clobbers what the user had copied.
         // The clipboard is only used as a fallback (see attemptInsert / the give-up branch).
         pendingText = text
+        pendingHost = originalHostPackage?.takeIf { it.isNotBlank() }
         main.removeCallbacksAndMessages(null)
         // Backstop retries in case the focus event doesn't arrive.
         for (delay in retryDelays) main.postDelayed({ attemptInsert() }, delay)
@@ -212,6 +216,7 @@ class OpenWisprAccessibilityService : AccessibilityService() {
             val t = pendingText
             if (t != null) {
                 pendingText = null
+                pendingHost = null
                 setClipboard(t)
                 // Say what happened. Reaching here means accessibility is running and we still
                 // couldn't find an editable node to write into — which is the normal outcome in
@@ -253,6 +258,7 @@ class OpenWisprAccessibilityService : AccessibilityService() {
             Log.i(TAG, if (viaPaste) "inserted via clipboard paste (clipboard overwritten)"
                        else "inserted at cursor (clipboard untouched)")
             pendingText = null
+            pendingHost = null
             main.removeCallbacksAndMessages(null)
             // The haptic tick is the confirmation. A toast on top of text visibly appearing in
             // the field is telling the user something they can already see.
@@ -275,18 +281,13 @@ class OpenWisprAccessibilityService : AccessibilityService() {
         val current = node.text?.toString() ?: ""
         val selA = node.textSelectionStart
         val selB = node.textSelectionEnd
-        val (start, end) = when {
-            selA in 0..current.length && selB in 0..current.length ->
-                minOf(selA, selB) to maxOf(selA, selB)
-            current.isEmpty() -> 0 to 0
-            else -> return false // unknown cursor in a non-empty field — let paste handle it
-        }
-        val newText = current.substring(0, start) + insert + current.substring(end)
+        val plan = InsertionTextPlanner.plan(current, insert, selA, selB)
+            ?: return false // unsafe or unknown cursor: allow clipboard paste fallback
         val setArgs = Bundle().apply {
-            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, newText)
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, plan.text)
         }
         if (!node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, setArgs)) return false
-        val cursor = start + insert.length
+        val cursor = plan.cursor
         val selArgs = Bundle().apply {
             putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, cursor)
             putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, cursor)
@@ -305,9 +306,12 @@ class OpenWisprAccessibilityService : AccessibilityService() {
     /** Focused editable node in the active window, only if it's NOT our own app. */
     private fun findHostFocusedEditable(): AccessibilityNodeInfo? {
         val root = rootInActiveWindow ?: return null
-        if (root.packageName == packageName) return null // our sheet is still up
         val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-        if (focused != null && focused.isEditable) return focused
+        if (focused != null && focused.isEditable &&
+            InsertionTargetPolicy.allows(
+                pendingHost, root.packageName, focused.packageName, packageName
+            )
+        ) return focused
         @Suppress("DEPRECATION") focused?.recycle()
         return null
     }
