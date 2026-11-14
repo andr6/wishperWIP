@@ -53,6 +53,9 @@ Automatic language detection is available as an **opt-in** choice in Settings.
 Parakeet v3 and multilingual Whisper detect languages on-device; see
 [AUTO_LANGUAGE.md](AUTO_LANGUAGE.md) for routing and code-switching limits.
 
+Native inference lifetime hardening and Android device stress-test gates are
+outlined in [NATIVE_LIFECYCLE.md](NATIVE_LIFECYCLE.md).
+
 ## Build
 
 For the fork's P0.0 baseline, Android CI validation and on-device smoke tests,
