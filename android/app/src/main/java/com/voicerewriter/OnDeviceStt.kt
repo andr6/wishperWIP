@@ -55,6 +55,14 @@ object OnDeviceStt {
      */
     fun resolveModel(context: Context, modelId: String, language: String): String {
         val id = resolveModel(modelId, language)
+        // Auto mode cannot use a fixed-language Whisper fine-tune. Prefer a
+        // general-purpose multilingual Whisper already present on the device.
+        if (DictationLanguage.isAutomatic(language) && !isParakeet(modelId) &&
+            WhisperModelManager.model(modelId).isTransliterating) {
+            return WhisperModelManager.GENERIC.lastOrNull {
+                WhisperModelManager.isReady(context, it.id)
+            }?.id ?: id
+        }
         if (!isParakeet(modelId) || supportsLanguage(modelId, language)) return id
         // Biggest-first: GENERIC is ordered tiny -> small, and accuracy tracks size. It excludes
         // the transliterating fine-tunes on purpose: the Hinglish model emits Roman script, so
