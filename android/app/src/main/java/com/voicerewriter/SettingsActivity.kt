@@ -236,11 +236,20 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
         BubbleService.instance?.refreshGating()
     }
 
-    fun sttModelState(id: String): String = when {
-        sttModel == id -> "active"
-        dlId == id -> "downloading"
-        OnDeviceStt.isReady(context, id, sttLanguage) -> "downloaded"
-        else -> "idle"
+    fun sttModelState(id: String): String {
+        // Model rows report the actual downloaded bundle. Routing a v2 row through
+        // Whisper when PT is selected would incorrectly mark Parakeet as ready.
+        val ready = when (id) {
+            ParakeetModelManager.MODEL_ID -> ParakeetModelManager.isReady(context)
+            ParakeetV3ModelManager.MODEL_ID -> ParakeetV3ModelManager.isReady(context)
+            else -> WhisperModelManager.isReady(context, id)
+        }
+        return when {
+            dlId == id -> "downloading"
+            ready && sttModel == id -> "active"
+            ready -> "downloaded"
+            else -> "idle"
+        }
     }
     fun llmModelState(id: String): String = when {
         provider == "local" && model == id -> "active"
