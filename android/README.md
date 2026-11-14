@@ -42,6 +42,9 @@ and device acceptance tests.
 See [PARAKEET_V3.md](PARAKEET_V3.md) for pinned v3 model provenance, setup
 and Android compatibility checks. V3 is not the default model.
 
+For repeatable on-device Whisper/Parakeet quality and latency measurements,
+see [BENCHMARK.md](BENCHMARK.md). No benchmark audio is stored in Git.
+
 ## Build
 
 For the fork's P0.0 baseline, Android CI validation and on-device smoke tests,
