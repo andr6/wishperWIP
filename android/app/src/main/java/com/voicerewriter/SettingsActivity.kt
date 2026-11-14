@@ -345,7 +345,10 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
                         sttLanguage = code
                         // Keep v3 selected for its 25 languages, including PT-PT and Spanish.
                         // Unsupported languages still fall back to multilingual Whisper.
-                        if (OnDeviceStt.isParakeet(sttModel) && !OnDeviceStt.supportsLanguage(sttModel, code)) {
+                        if ((OnDeviceStt.isParakeet(sttModel) && !OnDeviceStt.supportsLanguage(sttModel, code)) ||
+                            (DictationLanguage.isAutomatic(code) &&
+                                !OnDeviceStt.isParakeet(sttModel) &&
+                                WhisperModelManager.model(sttModel).isTransliterating)) {
                             sttModel = OnDeviceStt.resolveModel(context, sttModel, code)
                         }
                         pickingLanguage = false
