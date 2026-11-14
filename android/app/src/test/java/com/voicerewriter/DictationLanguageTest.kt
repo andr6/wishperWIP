@@ -55,4 +55,17 @@ class DictationLanguageTest {
     @Test fun `every offered label is non-blank`() {
         assertTrue(DictationLanguage.ALL.all { it.label.isNotBlank() })
     }
+    @Test fun `automatic is available and does not trigger English-only cleanup`() {
+        assertEquals("auto", DictationLanguage.normalize(" AUTO "))
+        assertEquals("Automatic (detect speech)", DictationLanguage.label("auto"))
+        assertTrue(DictationLanguage.isAutomatic("auto"))
+        assertFalse(DictationLanguage.isEnglish("auto"))
+        assertEquals("en", DictationLanguage.DEFAULT)
+    }
+
+    @Test fun `automatic is selectable without changing established first-run English default`() {
+        assertEquals("en", DictationLanguage.ALL.first().code)
+        assertEquals(1, DictationLanguage.ALL.count { it.code == DictationLanguage.AUTO })
+    }
+
 }

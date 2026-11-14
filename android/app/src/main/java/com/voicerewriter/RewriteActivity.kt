@@ -443,7 +443,8 @@ class RewriteActivity : ComponentActivity() {
         val current = OnDeviceStt.resolveModel(this, s.sttModel, s.sttLanguage)
         if (!OnDeviceStt.isParakeet(current)) {
             return when {
-                ParakeetV3ModelManager.supports(s.sttLanguage) && ParakeetV3ModelManager.isReady(this) ->
+                OnDeviceStt.supportsLanguage(ParakeetV3ModelManager.MODEL_ID, s.sttLanguage) &&
+                    ParakeetV3ModelManager.isReady(this) ->
                     ParakeetV3ModelManager.MODEL_ID to "Parakeet v3"
                 DictationLanguage.isEnglish(s.sttLanguage) && ParakeetModelManager.isReady(this) ->
                     ParakeetModelManager.MODEL_ID to "Parakeet v2"

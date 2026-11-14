@@ -267,7 +267,14 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
                     ParakeetV3ModelManager.MODEL_ID -> ParakeetV3ModelManager.download(context) { p -> dlProgress = p }
                     else -> WhisperModelManager.download(context, id) { p -> dlProgress = p }
                 }
-                sttModel = id; dlId = null; modelsRev++; persist()
+                dlId = null; modelsRev++
+                if (OnDeviceStt.resolveModel(id, sttLanguage) == id) {
+                    sttModel = id; persist()
+                } else {
+                    Toast.makeText(context,
+                        "Model downloaded. Choose a supported language to activate it.",
+                        Toast.LENGTH_LONG).show()
+                }
             } catch (e: Exception) {
                 dlId = null; Toast.makeText(context, e.message ?: "Download failed", Toast.LENGTH_LONG).show()
             }
@@ -345,7 +352,10 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
                         sttLanguage = code
                         // Keep v3 selected for its 25 languages, including PT-PT and Spanish.
                         // Unsupported languages still fall back to multilingual Whisper.
-                        if (OnDeviceStt.isParakeet(sttModel) && !OnDeviceStt.supportsLanguage(sttModel, code)) {
+                        if ((OnDeviceStt.isParakeet(sttModel) && !OnDeviceStt.supportsLanguage(sttModel, code)) ||
+                            (DictationLanguage.isAutomatic(code) &&
+                                !OnDeviceStt.isParakeet(sttModel) &&
+                                WhisperModelManager.model(sttModel).isTransliterating)) {
                             sttModel = OnDeviceStt.resolveModel(context, sttModel, code)
                         }
                         pickingLanguage = false
@@ -402,7 +412,16 @@ private fun SettingsScreen(repo: SettingsRepository, launch: (suspend () -> Unit
                                 ModelRow(
                                     name = m.name, meta = m.meta, recommended = m.recommended,
                                     state = sttModelState(m.id), progress = dlProgress,
-                                    onGet = { downloadStt(m.id) }, onUse = { sttModel = m.id; persist() },
+                                    onGet = { downloadStt(m.id) },
+                                    onUse = {
+                                        if (OnDeviceStt.resolveModel(m.id, sttLanguage) == m.id) {
+                                            sttModel = m.id; persist()
+                                        } else {
+                                            Toast.makeText(context,
+                                                "This model cannot detect the selected language. Use Parakeet v3 or multilingual Whisper.",
+                                                Toast.LENGTH_LONG).show()
+                                        }
+                                    },
                                     onDelete = {
                                         pendingDelete = DeletableModel(ModelKind.STT, m.id, m.name, m.meta)
                                     },
@@ -637,6 +656,7 @@ private fun LanguageRow(current: String, forcesWhisper: Boolean, onClick: () -> 
             Text("Dictation language", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
             Text(
                 if (forcesWhisper) "Uses Whisper — selected Parakeet does not support this language"
+                else if (DictationLanguage.isAutomatic(current)) "Detect language on-device for each recording"
                 else "The language you speak while dictating",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -652,7 +672,7 @@ private fun LanguageRow(current: String, forcesWhisper: Boolean, onClick: () -> 
 }
 
 /**
- * Picker over whisper.cpp's own language table. Long (100 entries), so it scrolls in a
+ * Picker over auto detection and whisper.cpp's language table; long, so it scrolls in a
  * LazyColumn rather than pretending to be a short menu. English sits first because it is the
  * default; the rest are alphabetical.
  */
@@ -664,9 +684,10 @@ private fun LanguageDialog(current: String, onPick: (String) -> Unit, onDismiss:
         text = {
             Column {
                 Text(
-                    "Speech is transcribed in this language, never translated. Cleanup rules " +
-                        "(capitalization, filler words, number formatting) are English-only and " +
-                        "are skipped for other languages.",
+                    "Automatic detects the spoken language with Parakeet v3 or multilingual " +
+                        "Whisper; Parakeet v2 switches to Whisper. Detection is per recording " +
+                        "and mixed-language sentences may still need correction. " +
+                        "English-only cleanup runs only when English is explicitly selected.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -743,7 +764,7 @@ private fun sttModelOptions(recommendedId: String): List<SttModelOption> = build
     add(
         SttModelOption(
             ParakeetModelManager.MODEL_ID, "Parakeet",
-            "${ParakeetModelManager.SIZE_LABEL} · most accurate",
+            "${ParakeetModelManager.SIZE_LABEL} · English only",
             OnDeviceStt.isParakeet(recommendedId),
         ),
     )

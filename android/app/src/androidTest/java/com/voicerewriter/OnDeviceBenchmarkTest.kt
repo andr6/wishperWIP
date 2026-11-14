@@ -46,7 +46,9 @@ class OnDeviceBenchmarkTest {
                 val (id, language, reference) = fields
                 require(id.matches(Regex("[A-Za-z0-9_-]+"))) { "Unsafe fixture ID: $id" }
                 require(reference.isNotBlank()) { "Empty reference in fixture $id" }
-                require(language in listOf("pt", "es", "en")) { "Unsupported evaluation language: $language" }
+                require(language in listOf("pt", "es", "en", DictationLanguage.AUTO)) {
+                    "Unsupported evaluation language: $language"
+                }
                 val audio = File(root, "$id.wav")
                 require(audio.isFile) { "Missing audio for $id" }
                 Fixture(id, language, reference, audio)

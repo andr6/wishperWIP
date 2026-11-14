@@ -48,7 +48,8 @@ object LocalWhisperStt {
         val model = WhisperModelManager.model(id)
         // A transliterating fine-tune decodes in its own fixed language, not the user's: the
         // Hinglish model is trained to map Hindi phonetics onto Latin tokens and must be told
-        // "en" to do it. Everything else honours the dictation language picker.
+        // "en" to do it. For other models, the language picker can pass
+        // "auto" to whisper.cpp for entirely local per-recording detection.
         val lang = model.decodeLanguage ?: DictationLanguage.normalize(settings.sttLanguage)
         // The vocab glossary is deliberately withheld from a transliterating model. Measured on
         // 2026-10-06 against the same clip: with `Glossary: Srushti, ...` as the initial_prompt

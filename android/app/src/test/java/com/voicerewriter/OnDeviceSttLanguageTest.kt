@@ -80,4 +80,25 @@ class OnDeviceSttLanguageTest {
         assertEquals(WhisperModelManager.DEFAULT_MODEL,
             OnDeviceStt.resolveModel(ParakeetModelManager.MODEL_ID, "pt"))
     }
+    @Test fun `v3 supports automatic language detection`() {
+        assertTrue(OnDeviceStt.supportsLanguage(ParakeetV3ModelManager.MODEL_ID, "auto"))
+        assertEquals(ParakeetV3ModelManager.MODEL_ID,
+            OnDeviceStt.resolveModel(ParakeetV3ModelManager.MODEL_ID, "auto"))
+    }
+
+    @Test fun `v2 cannot be silently used in automatic language mode`() {
+        assertTrue(!OnDeviceStt.supportsLanguage(ParakeetModelManager.MODEL_ID, "auto"))
+        assertEquals(WhisperModelManager.DEFAULT_MODEL,
+            OnDeviceStt.resolveModel(ParakeetModelManager.MODEL_ID, "auto"))
+    }
+
+    @Test fun `multilingual Whisper remains selected for automatic detection`() {
+        assertEquals("small", OnDeviceStt.resolveModel("small", "auto"))
+    }
+
+    @Test fun `transliterating Whisper fine tune cannot masquerade as auto language`() {
+        val specific = WhisperModelManager.MODELS.first { it.isTransliterating }.id
+        assertEquals(WhisperModelManager.DEFAULT_MODEL, OnDeviceStt.resolveModel(specific, "auto"))
+    }
+
 }
